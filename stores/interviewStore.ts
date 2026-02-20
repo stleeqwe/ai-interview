@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { InterviewSetupJSON } from '@/lib/schemas/interviewSetup';
 import type { EvaluationJSON } from '@/lib/schemas/evaluation';
@@ -27,6 +28,7 @@ interface InterviewState {
   avatarState: AvatarState;
   elapsedSeconds: number;
   isInterviewActive: boolean;
+  audioElement: HTMLAudioElement | null;
 
   // 화면 4: 평가
   evaluation: EvaluationJSON | null;
@@ -39,32 +41,44 @@ interface InterviewState {
   setAvatarState: (state: AvatarState) => void;
   incrementTimer: () => void;
   setInterviewActive: (active: boolean) => void;
-  setEvaluation: (evaluation: EvaluationJSON) => void;
+  setAudioElement: (el: HTMLAudioElement | null) => void;
+  setEvaluation: (evaluation: EvaluationJSON | null) => void;
   hydrateFromSession: () => void;
   reset: () => void;
 }
 
 const SESSION_STORAGE_KEY = 'ai-interview-setup';
+const TRANSCRIPT_STORAGE_KEY = 'ai-interview-transcript';
+const EVALUATION_STORAGE_KEY = 'ai-interview-evaluation';
+const RESUME_TEXT_STORAGE_KEY = 'ai-interview-resume-text';
 
-function loadInterviewSetup(): InterviewSetupJSON | null {
+function loadFromSession<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
   try {
-    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const stored = sessionStorage.getItem(key);
     return stored ? JSON.parse(stored) : null;
   } catch {
     return null;
   }
 }
 
-function saveInterviewSetup(setup: InterviewSetupJSON | null) {
+function saveToSession(key: string, value: unknown) {
   if (typeof window === 'undefined') return;
   try {
-    if (setup) {
-      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(setup));
+    if (value !== null && value !== undefined) {
+      sessionStorage.setItem(key, JSON.stringify(value));
     } else {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(key);
     }
   } catch { /* sessionStorage 용량 초과 등 무시 */ }
+}
+
+function loadInterviewSetup(): InterviewSetupJSON | null {
+  return loadFromSession<InterviewSetupJSON>(SESSION_STORAGE_KEY);
+}
+
+function saveInterviewSetup(setup: InterviewSetupJSON | null) {
+  saveToSession(SESSION_STORAGE_KEY, setup);
 }
 
 const initialState = {
@@ -78,18 +92,21 @@ const initialState = {
   avatarState: 'idle' as AvatarState,
   elapsedSeconds: 0,
   isInterviewActive: false,
+  audioElement: null as HTMLAudioElement | null,
   evaluation: null,
 };
 
 export const useInterviewStore = create<InterviewState>()(
-  immer((set) => ({
+  subscribeWithSelector(immer((set) => ({
     ...initialState,
 
-    setResumeText: (text, fileName) =>
+    setResumeText: (text, fileName) => {
+      saveToSession(RESUME_TEXT_STORAGE_KEY, text);
       set((s) => {
         s.resumeText = text;
         s.resumeFileName = fileName;
-      }),
+      });
+    },
 
     setJobPostingText: (text, companyName, position) =>
       set((s) => {
@@ -108,6 +125,7 @@ export const useInterviewStore = create<InterviewState>()(
     addTranscript: (entry) =>
       set((s) => {
         s.transcript.push(entry);
+        saveToSession(TRANSCRIPT_STORAGE_KEY, s.transcript);
       }),
 
     setAvatarState: (state) =>
@@ -125,28 +143,42 @@ export const useInterviewStore = create<InterviewState>()(
         s.isInterviewActive = active;
       }),
 
-    setEvaluation: (evaluation) =>
+    setAudioElement: (el) =>
       set((s) => {
-        s.evaluation = evaluation;
+        // HTMLAudioElement은 DOM 객체이므로 immer draft 변환 우회
+        (s as unknown as { audioElement: HTMLAudioElement | null }).audioElement = el;
       }),
 
+    setEvaluation: (evaluation) => {
+      saveToSession(EVALUATION_STORAGE_KEY, evaluation);
+      set((s) => {
+        s.evaluation = evaluation;
+      });
+    },
+
     hydrateFromSession: () => {
-      const saved = loadInterviewSetup();
-      if (saved) {
-        set((s) => {
-          s.interviewSetup = saved;
-        });
-      }
+      const savedSetup = loadInterviewSetup();
+      const savedTranscript = loadFromSession<TranscriptEntry[]>(TRANSCRIPT_STORAGE_KEY);
+      const savedEvaluation = loadFromSession<EvaluationJSON>(EVALUATION_STORAGE_KEY);
+      const savedResumeText = loadFromSession<string>(RESUME_TEXT_STORAGE_KEY);
+      set((s) => {
+        if (savedSetup) s.interviewSetup = savedSetup;
+        if (savedTranscript?.length) s.transcript = savedTranscript;
+        if (savedEvaluation) s.evaluation = savedEvaluation;
+        if (savedResumeText) s.resumeText = savedResumeText;
+      });
     },
 
     reset: () => {
       saveInterviewSetup(null);
+      saveToSession(TRANSCRIPT_STORAGE_KEY, null);
+      saveToSession(EVALUATION_STORAGE_KEY, null);
+      saveToSession(RESUME_TEXT_STORAGE_KEY, null);
       set(() => ({
         ...initialState,
-        interviewSetup: null,
       }));
     },
-  }))
+  })))
 );
 
 // Transcript를 대화 기록 문자열로 변환

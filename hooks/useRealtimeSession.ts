@@ -13,7 +13,7 @@ interface UseRealtimeSessionReturn {
 }
 
 const SDP_URL = 'https://api.openai.com/v1/realtime/calls';
-const REALTIME_MODEL = 'gpt-4o-realtime-preview';
+const REALTIME_MODEL = 'gpt-realtime';
 
 export function useRealtimeSession(): UseRealtimeSessionReturn {
   const [status, setStatus] = useState<SessionStatus>('idle');
@@ -43,6 +43,7 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
         audioEl.style.display = 'none';
         document.body.appendChild(audioEl);
         audioElRef.current = audioEl;
+        useInterviewStore.getState().setAudioElement(audioEl);
 
         pc.ontrack = (e) => {
           audioEl.srcObject = e.streams[0];
@@ -115,6 +116,8 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
 
   const sendTextEvent = useCallback((text: string) => {
     if (dcRef.current?.readyState === 'open') {
+      // 시스템 토큰을 사용자 입력에서 제거 (인젝션 방지)
+      const sanitized = text.replace(/\[INTERVIEW_END\]/g, '');
       // conversation.item.create 이벤트 형식으로 전송
       dcRef.current.send(
         JSON.stringify({
@@ -122,7 +125,7 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
           item: {
             type: 'message',
             role: 'user',
-            content: [{ type: 'input_text', text }],
+            content: [{ type: 'input_text', text: sanitized }],
           },
         })
       );
@@ -142,6 +145,7 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
     pcRef.current = null;
 
     if (audioElRef.current) {
+      useInterviewStore.getState().setAudioElement(null);
       audioElRef.current.srcObject = null;
       audioElRef.current.remove();
       audioElRef.current = null;
@@ -156,13 +160,17 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
       case 'response.audio_transcript.done': {
         const transcript = (event as { transcript?: string }).transcript;
         if (transcript) {
-          store.addTranscript({
-            speaker: 'interviewer',
-            text: transcript,
-            timestamp: Date.now(),
-          });
+          // [INTERVIEW_END] 토큰을 표시 텍스트에서 제거
+          const cleanTranscript = transcript.replace(/\[INTERVIEW_END\]/g, '').trim();
+          if (cleanTranscript) {
+            store.addTranscript({
+              speaker: 'interviewer',
+              text: cleanTranscript,
+              timestamp: Date.now(),
+            });
+          }
 
-          // [INTERVIEW_END] 토큰 감지
+          // [INTERVIEW_END] 토큰 감지 — 면접관(AI) 발화에서만 감지
           if (transcript.includes('[INTERVIEW_END]')) {
             setTimeout(() => disconnect(), 2000);
           }

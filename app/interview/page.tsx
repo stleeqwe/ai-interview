@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, PhoneOff, Mic, MicOff } from 'lucide-react';
+import { Loader2, PhoneOff, Mic, MicOff, MessageSquare, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Avatar } from '@/components/interview/Avatar';
+import { Avatar3D } from '@/components/interview/Avatar3D';
 import { Timer } from '@/components/interview/Timer';
 import { TranscriptPanel } from '@/components/interview/TranscriptPanel';
 import { CameraPip } from '@/components/interview/CameraPip';
@@ -18,16 +18,22 @@ export default function InterviewPage() {
   const router = useRouter();
   const interviewSetup = useInterviewStore((s) => s.interviewSetup);
   const isInterviewActive = useInterviewStore((s) => s.isInterviewActive);
+  const avatarState = useInterviewStore((s) => s.avatarState);
 
-  const { status, connect, disconnect } = useRealtimeSession();
+  const { status, connect, disconnect, sendTextEvent } = useRealtimeSession();
   const { permissions, micStream, camStream, micError, requestMicrophone, requestCamera, stopAllStreams } =
     useMediaPermissions();
-  const { isTimeUp } = useElapsedTimer();
+  const { isTimeUp, isWarning } = useElapsedTimer();
 
   const [isMuted, setIsMuted] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [noMic, setNoMic] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
   const initCalledRef = useRef(false);
+  const navigatingRef = useRef(false);
+  const warningSentRef = useRef(false);
+
+  const interviewer = interviewSetup?.interviewers[0];
 
   // 면접 설정이 없으면 홈으로
   useEffect(() => {
@@ -42,7 +48,6 @@ export default function InterviewPage() {
     setInitError(null);
 
     try {
-      // 1. 마이크 권한 요청 (없으면 무음 트랙으로 대체)
       let audioStream = await requestMicrophone();
       if (!audioStream) {
         console.warn('마이크 없음 — 무음 오디오 트랙으로 대체');
@@ -51,7 +56,6 @@ export default function InterviewPage() {
         const dest = ctx.createMediaStreamDestination();
         oscillator.connect(dest);
         oscillator.start();
-        // 무음 처리: gain 0
         const gain = ctx.createGain();
         gain.gain.value = 0;
         oscillator.disconnect();
@@ -61,10 +65,8 @@ export default function InterviewPage() {
         setNoMic(true);
       }
 
-      // 2. 카메라 요청 (선택적, 실패해도 계속 진행)
       await requestCamera();
 
-      // 3. 세션 토큰 발급
       const res = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,7 +79,6 @@ export default function InterviewPage() {
         throw new Error(data.error || '세션 생성에 실패했습니다.');
       }
 
-      // 4. WebRTC 연결
       await connect(data.clientSecret, audioStream);
     } catch (err) {
       setInitError(
@@ -86,7 +87,6 @@ export default function InterviewPage() {
     }
   }, [interviewSetup, requestMicrophone, requestCamera, connect]);
 
-  // 페이지 진입 시 자동 세션 초기화 (Strict Mode 이중 호출 방지)
   useEffect(() => {
     if (interviewSetup && status === 'idle' && !initCalledRef.current) {
       initCalledRef.current = true;
@@ -94,25 +94,9 @@ export default function InterviewPage() {
     }
   }, [interviewSetup, status, initSession]);
 
-  // 시간 초과 시 면접 종료
-  useEffect(() => {
-    if (isTimeUp && isInterviewActive) {
-      handleEndInterview();
-    }
-  }, [isTimeUp, isInterviewActive]);
-
-  // 페이지 이탈 방지
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isInterviewActive) {
-        e.preventDefault();
-      }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isInterviewActive]);
-
   const handleEndInterview = useCallback(() => {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
     disconnect();
     stopAllStreams();
     router.push('/feedback');
@@ -127,10 +111,32 @@ export default function InterviewPage() {
     }
   };
 
-  // 면접 종료 상태 감지 (WebRTC 연결 끊김)
   useEffect(() => {
-    if (status === 'disconnected' && isInterviewActive === false) {
-      // 세션이 끊어지고 store에서 inactive로 설정된 경우 → 피드백으로 이동
+    if (isWarning && isInterviewActive && !warningSentRef.current) {
+      warningSentRef.current = true;
+      sendTextEvent('[시스템 알림] 면접 시간이 5분 남았습니다. 남은 질문을 마무리해주세요.');
+    }
+  }, [isWarning, isInterviewActive, sendTextEvent]);
+
+  useEffect(() => {
+    if (isTimeUp && isInterviewActive) {
+      handleEndInterview();
+    }
+  }, [isTimeUp, isInterviewActive, handleEndInterview]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isInterviewActive) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isInterviewActive]);
+
+  useEffect(() => {
+    if (status === 'disconnected' && isInterviewActive === false && !navigatingRef.current) {
+      navigatingRef.current = true;
       const timeout = setTimeout(() => {
         stopAllStreams();
         router.push('/feedback');
@@ -141,10 +147,10 @@ export default function InterviewPage() {
 
   if (!interviewSetup) return null;
 
-  // 에러 화면 (연결 중 화면보다 우선)
+  // 에러 화면
   if (status === 'error' || initError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="flex min-h-screen items-center justify-center bg-[#2a2520] px-4">
         <Card className="w-full max-w-sm">
           <CardContent className="flex flex-col items-center gap-4 py-12">
             <p className="text-sm text-destructive text-center">
@@ -170,14 +176,14 @@ export default function InterviewPage() {
   // 연결 중 화면
   if (status === 'connecting' || status === 'idle') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-sm">
+      <div className="flex min-h-screen items-center justify-center bg-[#2a2520] px-4">
+        <Card className="w-full max-w-sm border-0 bg-black/30 backdrop-blur">
           <CardContent className="flex flex-col items-center gap-4 py-12">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <p className="text-sm font-medium text-muted-foreground">
+            <Loader2 className="h-10 w-10 animate-spin text-white/60" />
+            <p className="text-sm font-medium text-white/60">
               {permissions.microphone === null
                 ? '마이크 권한을 요청하고 있습니다...'
-                : '면접관과 연결하고 있습니다...'}
+                : '면접실에 입장하고 있습니다...'}
             </p>
           </CardContent>
         </Card>
@@ -185,66 +191,123 @@ export default function InterviewPage() {
     );
   }
 
-  // 면접 진행 화면
+  // ===== 면접 진행: 풀스크린 3D + 오버레이 UI =====
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* 마이크 없음 경고 */}
-      {noMic && (
-        <div className="bg-yellow-100 px-4 py-2 text-center text-xs text-yellow-800">
-          마이크가 감지되지 않았습니다. 면접관 음성은 들을 수 있지만 답변은 전달되지 않습니다.
-        </div>
-      )}
-      {/* 상단 바 */}
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold">
-            {interviewSetup.company_analysis.company_name} 모의면접
-          </h1>
-          <span className="text-xs text-muted-foreground">
-            {interviewSetup.company_analysis.position}
-          </span>
-        </div>
-        <Timer />
-      </header>
+    <div className="relative h-screen w-screen overflow-hidden select-none">
+      {/* 레이어 1: 풀스크린 3D 면접실 */}
+      <Avatar3D />
 
-      {/* 메인 컨텐츠 */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* 왼쪽: 아바타 + 카메라 */}
-        <div className="flex w-64 flex-col items-center justify-center gap-6 border-r bg-muted/30 p-4">
-          <Avatar />
+      {/* 레이어 2: 오버레이 UI */}
+
+      {/* 상단 바 */}
+      <div className="absolute top-0 inset-x-0 z-10">
+        {/* 마이크 없음 경고 */}
+        {noMic && (
+          <div className="bg-yellow-500/90 px-4 py-1.5 text-center text-xs text-white font-medium">
+            마이크가 감지되지 않았습니다. 면접관 음성은 들을 수 있지만 답변은 전달되지 않습니다.
+          </div>
+        )}
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/50 to-transparent">
+          <div className="flex items-center gap-3">
+            {/* 면접관 정보 + 상태 */}
+            {interviewer && (
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-sm font-medium text-white/90">
+                  {interviewer.name}
+                </span>
+                <span className="text-xs text-white/50">
+                  {interviewer.role}
+                </span>
+                <span
+                  className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    avatarState === 'speaking'
+                      ? 'bg-emerald-500/80 text-white'
+                      : avatarState === 'listening'
+                        ? 'bg-blue-500/80 text-white'
+                        : 'bg-white/20 text-white/60'
+                  }`}
+                >
+                  {avatarState === 'speaking'
+                    ? '말하는 중'
+                    : avatarState === 'listening'
+                      ? '듣는 중'
+                      : '대기'}
+                </span>
+              </div>
+            )}
+          </div>
+          <Timer />
+        </div>
+      </div>
+
+      {/* 우하단: 카메라 PIP */}
+      <div className="absolute bottom-24 right-4 z-10">
+        <div className="rounded-xl overflow-hidden shadow-2xl border border-white/10">
           <CameraPip stream={camStream} />
         </div>
+      </div>
 
-        {/* 오른쪽: 대화록 */}
-        <div className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-hidden p-4">
-            <TranscriptPanel />
+      {/* 하단: 대화록 패널 (접기/펼치기) */}
+      <div
+        className={`absolute bottom-24 left-4 z-10 transition-all duration-300 ${
+          showTranscript ? 'w-[420px] h-[320px]' : 'w-auto h-auto'
+        }`}
+      >
+        {showTranscript ? (
+          <div className="flex h-full flex-col rounded-xl bg-black/60 backdrop-blur-md border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+              <span className="text-xs font-medium text-white/70">대화록</span>
+              <button
+                onClick={() => setShowTranscript(false)}
+                className="text-white/40 hover:text-white/80 transition-colors"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden p-3">
+              <TranscriptPanel />
+            </div>
           </div>
+        ) : (
+          <button
+            onClick={() => setShowTranscript(true)}
+            className="flex items-center gap-2 rounded-xl bg-black/50 backdrop-blur-md border border-white/10 px-4 py-2.5 text-white/70 hover:text-white hover:bg-black/60 transition-all"
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span className="text-xs font-medium">대화록</span>
+          </button>
+        )}
+      </div>
 
-          {/* 하단 컨트롤 */}
-          <div className="flex items-center justify-center gap-3 border-t p-4">
-            <Button
-              variant={isMuted ? 'destructive' : 'outline'}
-              size="icon"
-              className="h-12 w-12 rounded-full"
-              onClick={toggleMute}
-            >
-              {isMuted ? (
-                <MicOff className="h-5 w-5" />
-              ) : (
-                <Mic className="h-5 w-5" />
-              )}
-            </Button>
-            <Button
-              variant="destructive"
-              size="lg"
-              className="rounded-full px-6"
-              onClick={handleEndInterview}
-            >
-              <PhoneOff className="mr-2 h-4 w-4" />
-              면접 종료
-            </Button>
-          </div>
+      {/* 하단 중앙: 컨트롤 바 */}
+      <div className="absolute bottom-0 inset-x-0 z-10">
+        <div className="flex items-center justify-center gap-4 px-4 py-4 bg-gradient-to-t from-black/60 to-transparent">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-14 w-14 rounded-full border-2 backdrop-blur transition-all ${
+              isMuted
+                ? 'border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300'
+                : 'border-white/20 bg-white/10 text-white hover:bg-white/20'
+            }`}
+            onClick={toggleMute}
+          >
+            {isMuted ? (
+              <MicOff className="h-6 w-6" />
+            ) : (
+              <Mic className="h-6 w-6" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            className="rounded-full border-2 border-red-500 bg-red-500/20 px-8 py-3 text-red-400 hover:bg-red-500/30 hover:text-red-300 backdrop-blur"
+            onClick={handleEndInterview}
+          >
+            <PhoneOff className="mr-2 h-5 w-5" />
+            면접 종료
+          </Button>
         </div>
       </div>
     </div>
