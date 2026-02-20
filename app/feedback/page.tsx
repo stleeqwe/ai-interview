@@ -17,6 +17,7 @@ export default function FeedbackPage() {
   const transcript = useInterviewStore((s) => s.transcript);
   const evaluation = useInterviewStore((s) => s.evaluation);
   const setEvaluation = useInterviewStore((s) => s.setEvaluation);
+  const resumeText = useInterviewStore((s) => s.resumeText);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function FeedbackPage() {
           body: JSON.stringify({
             interviewSetup,
             transcript: transcriptText,
+            resumeText: resumeText ?? undefined,
           }),
         });
 
@@ -64,11 +66,11 @@ export default function FeedbackPage() {
     };
 
     fetchEvaluation();
-  }, [interviewSetup, transcript, evaluation, setEvaluation]);
+  }, [interviewSetup, transcript, evaluation, setEvaluation, resumeText]);
 
   const handleRetry = () => {
     setError(null);
-    setEvaluation(null as unknown as Parameters<typeof setEvaluation>[0]);
+    setEvaluation(null);
   };
 
   const handleNewInterview = () => {
