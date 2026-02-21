@@ -1,5 +1,7 @@
 // 3D 아바타 애니메이션 설정 상수
 
+import type { FacialExpression } from './types';
+
 export const BLINK = {
   MIN_INTERVAL: 3,
   MAX_INTERVAL: 7,
@@ -92,3 +94,113 @@ export const EXPRESSIONS = {
   MOUTH_SMILE_R: 'mouthSmileRight',
   BROW_INNER_UP: 'browInnerUp',
 } as const;
+
+/** 면접 상황별 표정 프리셋 (avatarState → 모프타겟 가중치) */
+export const FACIAL_EXPRESSIONS: Record<string, FacialExpression> = {
+  default: {},
+  smile: {
+    mouthSmileLeft: 0.35,
+    mouthSmileRight: 0.35,
+    eyeSquintLeft: 0.2,
+    eyeSquintRight: 0.2,
+  },
+  listening: {
+    browInnerUp: 0.15,
+    eyeWideLeft: 0.1,
+    eyeWideRight: 0.1,
+    mouthSmileLeft: 0.1,
+    mouthSmileRight: 0.1,
+  },
+  thinking: {
+    browInnerUp: 0.3,
+    eyeSquintLeft: 0.15,
+    eyeSquintRight: 0.15,
+    mouthPressLeft: 0.2,
+    mouthPressRight: 0.2,
+  },
+  concerned: {
+    browInnerUp: 0.4,
+    browOuterUpLeft: 0.2,
+    browOuterUpRight: 0.2,
+    mouthFrownLeft: 0.15,
+    mouthFrownRight: 0.15,
+  },
+};
+
+/** avatarState → 표정 프리셋 매핑 */
+export const STATE_EXPRESSION_MAP: Record<string, string> = {
+  idle: 'default',
+  speaking: 'smile',
+  listening: 'listening',
+};
+
+/** 68개 ARKit 모프타겟 전체 목록 (초기화 리셋용) */
+export const ARKIT_MORPH_TARGETS = [
+  'browDownLeft',
+  'browDownRight',
+  'browInnerUp',
+  'browOuterUpLeft',
+  'browOuterUpRight',
+  'cheekPuff',
+  'cheekSquintLeft',
+  'cheekSquintRight',
+  'eyeBlinkLeft',
+  'eyeBlinkRight',
+  'eyeLookDownLeft',
+  'eyeLookDownRight',
+  'eyeLookInLeft',
+  'eyeLookInRight',
+  'eyeLookOutLeft',
+  'eyeLookOutRight',
+  'eyeLookUpLeft',
+  'eyeLookUpRight',
+  'eyeSquintLeft',
+  'eyeSquintRight',
+  'eyeWideLeft',
+  'eyeWideRight',
+  'jawForward',
+  'jawLeft',
+  'jawOpen',
+  'jawRight',
+  'mouthClose',
+  'mouthDimpleLeft',
+  'mouthDimpleRight',
+  'mouthFrownLeft',
+  'mouthFrownRight',
+  'mouthFunnel',
+  'mouthLeft',
+  'mouthLowerDownLeft',
+  'mouthLowerDownRight',
+  'mouthPressLeft',
+  'mouthPressRight',
+  'mouthPucker',
+  'mouthRight',
+  'mouthRollLower',
+  'mouthRollUpper',
+  'mouthShrugLower',
+  'mouthShrugUpper',
+  'mouthSmileLeft',
+  'mouthSmileRight',
+  'mouthStretchLeft',
+  'mouthStretchRight',
+  'mouthUpperUpLeft',
+  'mouthUpperUpRight',
+  'noseSneerLeft',
+  'noseSneerRight',
+  'tongueOut',
+  'viseme_sil',
+  'viseme_PP',
+  'viseme_FF',
+  'viseme_TH',
+  'viseme_DD',
+  'viseme_kk',
+  'viseme_CH',
+  'viseme_SS',
+  'viseme_nn',
+  'viseme_RR',
+  'viseme_aa',
+  'viseme_E',
+  'viseme_I',
+  'viseme_O',
+  'viseme_U',
+] as const;

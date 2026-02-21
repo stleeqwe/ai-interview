@@ -37,7 +37,9 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
         const pc = new RTCPeerConnection();
         pcRef.current = pc;
 
-        // 2. 오디오 출력 엘리먼트 연결 (DOM에 추가해야 일부 브라우저에서 재생됨)
+        // 2. 오디오 출력 엘리먼트 연결
+        // TalkingHead 로딩 전에는 이 엘리먼트로 음성 출력 (폴백)
+        // TalkingHead가 준비되면 response.audio.delta 핸들러에서 mute 처리
         const audioEl = document.createElement('audio');
         audioEl.autoplay = true;
         audioEl.style.display = 'none';
@@ -192,11 +194,42 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
 
       case 'response.audio.delta': {
         store.setAvatarState('speaking');
+        // base64 오디오 → PCM Int16 ArrayBuffer → TalkingHead streamAudio
+        const delta = (event as { delta?: string }).delta;
+        const head = store.talkingHeadRef;
+        if (delta && head) {
+          // TalkingHead가 오디오를 처리하므로 WebRTC audioEl은 mute (이중 재생 방지)
+          const audioEl = store.audioElement;
+          if (audioEl && !audioEl.muted) {
+            audioEl.muted = true;
+          }
+          try {
+            const binaryStr = atob(delta);
+            const len = binaryStr.length;
+            const buf = new ArrayBuffer(len);
+            const view = new Uint8Array(buf);
+            for (let i = 0; i < len; i++) {
+              view[i] = binaryStr.charCodeAt(i);
+            }
+            head.streamAudio({ audio: buf });
+          } catch (err) {
+            console.warn('TalkingHead streamAudio failed:', err);
+          }
+        }
         break;
       }
 
       case 'response.audio.done': {
         store.setAvatarState('listening');
+        // TalkingHead에 오디오 스트림 종료 알림
+        const headDone = store.talkingHeadRef;
+        if (headDone) {
+          try {
+            headDone.streamNotifyEnd();
+          } catch (err) {
+            console.warn('TalkingHead streamNotifyEnd failed:', err);
+          }
+        }
         break;
       }
 
@@ -207,6 +240,18 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
 
       case 'session.created': {
         console.log('Realtime 세션 생성됨');
+        // AI 면접관이 인사 + 첫 질문을 한 번에 시작하도록 트리거
+        if (dcRef.current?.readyState === 'open') {
+          dcRef.current.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'user',
+              content: [{ type: 'input_text', text: '면접을 시작해주세요. 간단히 인사하고 바로 첫 번째 질문으로 넘어가주세요.' }],
+            },
+          }));
+          dcRef.current.send(JSON.stringify({ type: 'response.create' }));
+        }
         break;
       }
 

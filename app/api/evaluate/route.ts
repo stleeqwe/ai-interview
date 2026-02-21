@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
       config: {
         systemInstruction: systemParts.join('\n\n'),
         responseMimeType: 'application/json',
+        temperature: 0.3,
       },
     });
 

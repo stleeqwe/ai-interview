@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2, Link as LinkIcon, FileText, Check } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { Loader2, Link as LinkIcon, FileText, Image, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useInterviewStore } from '@/stores/interviewStore';
@@ -62,6 +63,63 @@ export function JobPostingInput() {
     setJobPostingText(trimmed);
   };
 
+  const onDropImage = useCallback(
+    async (acceptedFiles: File[]) => {
+      const file = acceptedFiles[0];
+      if (!file) return;
+
+      setError(null);
+      setIsLoading(true);
+
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+
+        const res = await fetch('/api/ocr', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || '이미지 텍스트 추출에 실패했습니다.');
+        }
+
+        if (data.text.trim().length < 50) {
+          throw new Error('추출된 텍스트가 너무 짧습니다. 더 선명한 스크린샷을 사용해주세요.');
+        }
+
+        setJobPostingText(data.text.trim());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '이미지 처리에 실패했습니다.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [setJobPostingText]
+  );
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: onDropImage,
+    accept: {
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/webp': ['.webp'],
+    },
+    maxFiles: 1,
+    maxSize: 10 * 1024 * 1024,
+    disabled: isLoading,
+    onDropRejected: (rejections) => {
+      const code = rejections[0]?.errors[0]?.code;
+      if (code === 'file-too-large') {
+        setError('이미지 크기는 10MB 이하만 가능합니다.');
+      } else if (code === 'file-invalid-type') {
+        setError('PNG, JPG, WebP 이미지만 지원합니다.');
+      }
+    },
+  });
+
   const handleReset = () => {
     useInterviewStore.setState({
       jobPostingText: null,
@@ -107,6 +165,10 @@ export function JobPostingInput() {
           <TabsTrigger value="paste" className="flex-1 gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             직접 입력
+          </TabsTrigger>
+          <TabsTrigger value="screenshot" className="flex-1 gap-1.5">
+            <Image className="h-3.5 w-3.5" />
+            스크린샷
           </TabsTrigger>
         </TabsList>
 
@@ -155,6 +217,34 @@ export function JobPostingInput() {
             >
               입력 완료
             </Button>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="screenshot" className="space-y-3">
+          <div
+            {...getRootProps()}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors ${
+              isDragActive
+                ? 'border-primary bg-primary/5'
+                : 'border-muted-foreground/25 hover:border-primary/50'
+            } ${isLoading ? 'pointer-events-none opacity-50' : ''}`}
+          >
+            <input {...getInputProps()} />
+            {isLoading ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            ) : (
+              <Image className="h-8 w-8 text-muted-foreground" />
+            )}
+            <p className="mt-3 text-sm font-medium">
+              {isLoading
+                ? 'OCR 텍스트 추출 중...'
+                : isDragActive
+                  ? '여기에 이미지를 놓으세요'
+                  : '채용공고 스크린샷을 드래그하거나 클릭하여 업로드'}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              PNG, JPG, WebP (최대 10MB)
+            </p>
           </div>
         </TabsContent>
       </Tabs>

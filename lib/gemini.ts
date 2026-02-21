@@ -1,5 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
-import type { GroundingReport, GroundingSource, GroundingEvidence } from '@/lib/types/grounding';
+import type {
+  GroundingReport,
+  GroundingSource,
+  GroundingEvidence,
+  ResearchDirectiveSet,
+} from '@/lib/types/grounding';
 
 const globalForGemini = globalThis as unknown as { geminiClient?: GoogleGenAI };
 
@@ -14,16 +19,25 @@ export function getGeminiClient(): GoogleGenAI {
   return globalForGemini.geminiClient;
 }
 
-const GROUNDING_SYSTEM_PROMPT = `당신은 면접 준비를 위한 리서치 어시스턴트입니다.
-아래 이력서와 채용공고를 분석하고, Google 검색을 활용하여 다음 정보를 조사하세요:
+const DIRECTED_GROUNDING_PROMPT = `당신은 면접 준비를 위한 리서치 어시스턴트입니다.
+주어진 조사 지시문(directives)에 따라 Google 검색을 수행하고 결과를 정리하세요.
 
-1. 해당 회사의 기술 블로그, 엔지니어링 문화, 최근 기술적 움직임
-2. 포지션에서 요구하는 기술 스택의 최신 트렌드와 실무 이슈
-3. 도메인 특화 지식 (핀테크→결제/규제, 헬스케어→규제/인증, 이커머스→트래픽/결제 등)
-4. 해당 직급에서 기대되는 역량 수준과 면접에서 자주 나오는 주제
+## 리서치 규칙
 
-조사 결과를 한국어로 정리하여 면접 질문 설계에 활용할 수 있는 리서치 리포트를 작성하세요.
-각 항목별로 핵심 포인트만 간결하게 정리하세요.`;
+1. priority 1 항목을 먼저 조사하세요. 시간이 부족하면 priority 3은 건너뛰세요.
+2. 각 directive의 query를 기반으로 검색하되, 더 효과적인 검색어가 있다면 변형해도 됩니다.
+3. 각 directive에 대해 다음 형식으로 결과를 정리하세요:
+
+### [directive id] (priority N)
+**핵심 발견**: (핵심 발견사항 3~5줄)
+**면접 활용**: (이 정보를 면접 질문에 어떻게 활용할 수 있는지 1~2줄)
+
+4. 검색 결과가 없거나 부족한 directive는 다음과 같이 표시하세요:
+### [directive id] — 정보 부족
+**대안**: (fallback_strategy 기반 대안 정보)
+
+5. 한국어로 작성하세요. 사실만 보고하세요. 추측이나 의견을 넣지 마세요.
+6. 전체 리포트를 2000자 이내로 유지하세요.`;
 
 function makeSkippedReport(reason: string): GroundingReport {
   return {
@@ -38,29 +52,57 @@ function makeSkippedReport(reason: string): GroundingReport {
   };
 }
 
-export async function performGroundingResearch(
-  resumeText: string,
-  jobPostingText: string,
+/**
+ * Claude Stage 0이 생성한 조사 지시문을 기반으로 Gemini 그라운딩 리서치를 수행한다.
+ */
+export async function performDirectedResearch(
+  directives: ResearchDirectiveSet,
 ): Promise<GroundingReport> {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return makeSkippedReport('GOOGLE_API_KEY 미설정');
   }
 
+  if (!directives.directives || directives.directives.length === 0) {
+    return makeSkippedReport('조사 지시문이 비어있음');
+  }
+
   const start = Date.now();
+
+  // 조사 지시문을 Gemini에 전달할 텍스트로 변환
+  const directiveLines = directives.directives
+    .sort((a, b) => a.priority - b.priority)
+    .map(
+      (d) =>
+        `- [${d.id}] (priority ${d.priority}, ${d.category})\n  검색: ${d.query}\n  목적: ${d.context}\n  대안: ${d.fallback_strategy}`,
+    )
+    .join('\n\n');
+
+  const userContent = `[조사 지시문]
+${directiveLines}
+
+[참고: 지원자 프로필]
+${directives.candidate_summary}
+
+[참고: 지원 포지션]
+${directives.position_summary}
+
+[참고: 식별된 갭]
+${directives.identified_gaps.map((g) => `- ${g}`).join('\n')}`;
 
   try {
     const client = getGeminiClient();
     const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 15_000);
+    const timeout = setTimeout(() => abortController.abort(), 120_000);
 
     try {
       const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `[채용공고]\n${jobPostingText}\n\n[이력서]\n${resumeText}`,
+        model: 'gemini-3-flash-preview',
+        contents: userContent,
         config: {
-          systemInstruction: GROUNDING_SYSTEM_PROMPT,
+          systemInstruction: DIRECTED_GROUNDING_PROMPT,
           tools: [{ googleSearch: {} }],
+          temperature: 1.0,
           abortSignal: abortController.signal,
         },
       });
@@ -68,7 +110,6 @@ export async function performGroundingResearch(
       const durationMs = Date.now() - start;
       const researchText = response.text ?? '';
 
-      // --- 메타데이터 추출 ---
       const metadata = response.candidates?.[0]?.groundingMetadata;
 
       const searchQueries: string[] = metadata?.webSearchQueries ?? [];
@@ -78,7 +119,9 @@ export async function performGroundingResearch(
         .map((chunk) => ({
           title: chunk.web!.title ?? '(제목 없음)',
           uri: chunk.web!.uri ?? '',
-          domain: chunk.web!.domain ?? new URL(chunk.web!.uri ?? 'https://unknown').hostname,
+          domain:
+            chunk.web!.domain ??
+            new URL(chunk.web!.uri ?? 'https://unknown').hostname,
         }));
 
       const evidences: GroundingEvidence[] = (metadata?.groundingSupports ?? [])
@@ -103,7 +146,7 @@ export async function performGroundingResearch(
   } catch (error) {
     const durationMs = Date.now() - start;
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn('Google Search 리서치 실패 (면접 생성은 정상 진행):', error);
+    console.warn('Gemini 지시문 기반 리서치 실패 (면접 생성은 정상 진행):', error);
 
     return {
       status: 'error',

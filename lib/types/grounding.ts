@@ -1,3 +1,21 @@
+/** Claude Stage 0이 생성하는 개별 조사 지시문 */
+export interface ResearchDirective {
+  id: string;
+  priority: 1 | 2 | 3;
+  category: 'company_intelligence' | 'domain_knowledge' | 'technology_deep_dive' | 'role_benchmarking';
+  query: string;
+  context: string;
+  fallback_strategy: string;
+}
+
+/** Claude Stage 0의 전체 출력 — Gemini 그라운딩에 전달되는 조사 계획 */
+export interface ResearchDirectiveSet {
+  candidate_summary: string;
+  position_summary: string;
+  identified_gaps: string[];
+  directives: ResearchDirective[];
+}
+
 /** Google Search Grounding 리서치 결과의 개별 웹 소스 */
 export interface GroundingSource {
   title: string;

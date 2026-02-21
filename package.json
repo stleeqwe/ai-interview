@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node scripts/patch-talkinghead.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",
     "@google/genai": "^1.42.0",
+    "@met4citizen/talkinghead": "^1.7.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "class-variance-authority": "^0.7.1",

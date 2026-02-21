@@ -4,11 +4,20 @@ import { useEffect, useState } from 'react';
 import { Avatar3D } from '@/components/interview/Avatar3D';
 import { useInterviewStore } from '@/stores/interviewStore';
 
+const AVATAR_OPTIONS: { label: string; path: string }[] = [
+  { label: 'RPM (default)', path: '/models/rpm-avatar.glb' },
+  { label: 'asanchezyali', path: '/models/avatar.glb' },
+  { label: 'Sarah', path: '/models/avatar-sarah.glb' },
+  { label: 'Doctor', path: '/models/avatar-doctor.glb' },
+  { label: 'Nanami', path: '/models/avatar-nanami.glb' },
+];
+
 export default function TestAvatarPage() {
   const avatarState = useInterviewStore((s) => s.avatarState);
   const setAvatarState = useInterviewStore((s) => s.setAvatarState);
   const setInterviewSetup = useInterviewStore((s) => s.setInterviewSetup);
   const [mounted, setMounted] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(AVATAR_OPTIONS[0].path);
 
   useEffect(() => {
     setInterviewSetup({
@@ -35,7 +44,7 @@ export default function TestAvatarPage() {
       ],
       questions: [],
       system_prompt: '',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     setMounted(true);
   }, [setInterviewSetup]);
@@ -44,10 +53,27 @@ export default function TestAvatarPage() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      {/* 풀스크린 3D 면접실 */}
-      <Avatar3D />
+      {/* 풀스크린 3D 면접실 — key로 모델 변경 시 리마운트 */}
+      <Avatar3D key={selectedModel} modelPath={selectedModel} />
 
-      {/* 오버레이 컨트롤 */}
+      {/* 아바타 선택 */}
+      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+        {AVATAR_OPTIONS.map((opt) => (
+          <button
+            key={opt.path}
+            onClick={() => setSelectedModel(opt.path)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium backdrop-blur transition-all text-left ${
+              selectedModel === opt.path
+                ? 'bg-white text-black shadow-lg'
+                : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 상태 전환 컨트롤 */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3">
         {(['idle', 'speaking', 'listening'] as const).map((state) => (
           <button

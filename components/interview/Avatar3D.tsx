@@ -5,8 +5,8 @@ import { useInterviewStore } from '@/stores/interviewStore';
 import { Loader2, User } from 'lucide-react';
 import { Component, type ReactNode, type ErrorInfo, useState } from 'react';
 
-const Avatar3DCanvas = dynamic(
-  () => import('./Avatar3DCanvas').then((mod) => ({ default: mod.Avatar3DCanvas })),
+const TalkingHeadAvatar = dynamic(
+  () => import('./TalkingHeadAvatar').then((mod) => ({ default: mod.TalkingHeadAvatar })),
   {
     ssr: false,
     loading: () => <AvatarLoading />,
@@ -59,7 +59,11 @@ function isWebGLAvailable(): boolean {
  * 풀스크린 3D 면접실 아바타.
  * 부모 요소의 전체 크기를 채움 (absolute inset-0).
  */
-export function Avatar3D() {
+interface Avatar3DProps {
+  modelPath?: string;
+}
+
+export function Avatar3D({ modelPath }: Avatar3DProps) {
   const [hasError, setHasError] = useState(false);
   const [webGLAvailable] = useState(() => isWebGLAvailable());
 
@@ -67,7 +71,7 @@ export function Avatar3D() {
     <div className="absolute inset-0">
       {webGLAvailable && !hasError ? (
         <ErrorBoundaryWrapper onError={() => setHasError(true)}>
-          <Avatar3DCanvas />
+          <TalkingHeadAvatar modelPath={modelPath} />
         </ErrorBoundaryWrapper>
       ) : (
         <Avatar2DFallback />

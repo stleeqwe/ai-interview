@@ -20,6 +20,9 @@ export interface TranscriptEntry {
 
 type AvatarState = 'idle' | 'speaking' | 'listening';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TalkingHeadInstance = any;
+
 interface InterviewState {
   // 화면 1: 업로드
   resumeText: string | null;
@@ -39,6 +42,7 @@ interface InterviewState {
   elapsedSeconds: number;
   isInterviewActive: boolean;
   audioElement: HTMLAudioElement | null;
+  talkingHeadRef: TalkingHeadInstance | null;
 
   // 화면 4: 평가
   evaluation: EvaluationJSON | null;
@@ -54,6 +58,7 @@ interface InterviewState {
   incrementTimer: () => void;
   setInterviewActive: (active: boolean) => void;
   setAudioElement: (el: HTMLAudioElement | null) => void;
+  setTalkingHeadRef: (ref: TalkingHeadInstance | null) => void;
   setEvaluation: (evaluation: EvaluationJSON | null) => void;
   hydrateFromSession: () => void;
   reset: () => void;
@@ -109,6 +114,7 @@ const initialState = {
   elapsedSeconds: 0,
   isInterviewActive: false,
   audioElement: null as HTMLAudioElement | null,
+  talkingHeadRef: null as TalkingHeadInstance | null,
   evaluation: null,
 };
 
@@ -177,6 +183,12 @@ export const useInterviewStore = create<InterviewState>()(
       set((s) => {
         // HTMLAudioElement은 DOM 객체이므로 immer draft 변환 우회
         (s as unknown as { audioElement: HTMLAudioElement | null }).audioElement = el;
+      }),
+
+    setTalkingHeadRef: (ref) =>
+      set((s) => {
+        // TalkingHead 인스턴스는 외부 객체이므로 immer draft 변환 우회
+        (s as unknown as { talkingHeadRef: TalkingHeadInstance | null }).talkingHeadRef = ref;
       }),
 
     setEvaluation: (evaluation) => {

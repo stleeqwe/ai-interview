@@ -1,8 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useCallback } from 'react';
-import * as THREE from 'three';
-import type { MorphTargetRef } from '../Avatar3DModel';
+import type { LerpMorphTargetFn } from './types';
 import { useInterviewStore } from '@/stores/interviewStore';
 import { VISEMES } from './constants';
 
@@ -88,7 +87,7 @@ export function useLipSync() {
     return () => unsub();
   }, []);
 
-  const update = useCallback((morph: MorphTargetRef) => {
+  const update = useCallback((lerpMorphTarget: LerpMorphTargetFn) => {
     const lipsync = lipsyncRef.current;
     if (!lipsync || !readyRef.current) return;
 
@@ -101,31 +100,17 @@ export function useLipSync() {
     // 모든 viseme morph target 업데이트 (부드러운 전환)
     const allVisemes = Object.values(VISEMES) as string[];
     for (const name of allVisemes) {
-      const idx = morph.dict[name];
-      if (idx === undefined || !morph.mesh.morphTargetInfluences) continue;
-
       const isActive = avatarState === 'speaking' && name === activeViseme;
       const target = isActive ? 1 : 0;
       const lerpSpeed = isActive ? 0.4 : 0.3;
 
-      morph.mesh.morphTargetInfluences[idx] = THREE.MathUtils.lerp(
-        morph.mesh.morphTargetInfluences[idx],
-        target,
-        lerpSpeed
-      );
+      lerpMorphTarget(name, target, lerpSpeed);
     }
 
     // jawOpen — 활성 viseme에 비례하여 턱 벌림
-    const jawIdx = morph.dict['jawOpen'];
-    if (jawIdx !== undefined && morph.mesh.morphTargetInfluences) {
-      const jawTarget =
-        avatarState === 'speaking' ? (JAW_OPEN_MAP[activeViseme] ?? 0) : 0;
-      morph.mesh.morphTargetInfluences[jawIdx] = THREE.MathUtils.lerp(
-        morph.mesh.morphTargetInfluences[jawIdx],
-        jawTarget,
-        0.35
-      );
-    }
+    const jawTarget =
+      avatarState === 'speaking' ? (JAW_OPEN_MAP[activeViseme] ?? 0) : 0;
+    lerpMorphTarget('jawOpen', jawTarget, 0.35);
   }, []);
 
   return { update };

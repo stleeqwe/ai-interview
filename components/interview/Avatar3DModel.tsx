@@ -2,19 +2,23 @@
 
 import { useRef, useMemo, useEffect, useCallback } from 'react';
 import { useFrame, useLoader } from '@react-three/fiber';
+import { useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader, SkeletonUtils } from 'three-stdlib';
 import { useLipSync } from './avatar/useLipSync';
 import { useInterviewStore } from '@/stores/interviewStore';
-import { OFFICE, EXPRESSIONS, BLINK } from './avatar/constants';
+import {
+  OFFICE,
+  EXPRESSIONS,
+  BLINK,
+  ARKIT_MORPH_TARGETS,
+  FACIAL_EXPRESSIONS,
+  STATE_EXPRESSION_MAP,
+} from './avatar/constants';
+import type { LerpMorphTargetFn } from './avatar/types';
 
-const MODEL_PATH = '/models/interviewer.glb';
-const ANIMATIONS_PATH = '/models/animations.glb';
-
-export interface MorphTargetRef {
-  mesh: THREE.SkinnedMesh;
-  dict: Record<string, number>;
-}
+const DEFAULT_MODEL_PATH = '/models/avatar.glb';
+const ANIMATIONS_PATH = '/models/avatar-animations.glb';
 
 /** avatarState → 재생할 애니메이션 */
 const STATE_ANIMS: Record<string, string[]> = {
@@ -23,84 +27,91 @@ const STATE_ANIMS: Record<string, string[]> = {
   listening: ['HappyIdle'],
 };
 
-export function Avatar3DModel() {
-  const gltf = useLoader(GLTFLoader, MODEL_PATH);
+interface Avatar3DModelProps {
+  modelPath?: string;
+}
+
+export function Avatar3DModel({ modelPath = DEFAULT_MODEL_PATH }: Avatar3DModelProps) {
+  const gltf = useLoader(GLTFLoader, modelPath);
   const animGltf = useLoader(GLTFLoader, ANIMATIONS_PATH);
 
   const groupRef = useRef<THREE.Group>(null);
-  const morphRef = useRef<MorphTargetRef | null>(null);
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
-  const actionsRef = useRef<Record<string, THREE.AnimationAction>>({});
   const currentClipRef = useRef<string>('Idle');
 
   const lipSync = useLipSync();
 
-  // 눈 깜빡임 상태
-  const blinkRef = useRef({
-    nextAt: BLINK.MIN_INTERVAL + Math.random() * (BLINK.MAX_INTERVAL - BLINK.MIN_INTERVAL),
-    progress: 0,
-    isBlinking: false,
-    elapsed: 0,
-  });
+  // 눈 깜빡임: useRef + setTimeout 방식
+  const blinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isBlinkingRef = useRef(false);
 
-  // 모델 클론 + morph 탐색
+  // 모델 클론
   const clonedScene = useMemo(() => {
     const cloned = SkeletonUtils.clone(gltf.scene);
-
-    // viseme morph target이 있는 SkinnedMesh 찾기
-    cloned.traverse((child) => {
-      if (
-        child instanceof THREE.SkinnedMesh &&
-        child.morphTargetDictionary &&
-        child.morphTargetInfluences &&
-        'viseme_aa' in child.morphTargetDictionary
-      ) {
-        morphRef.current = {
-          mesh: child,
-          dict: child.morphTargetDictionary,
-        };
-      }
-    });
-
     return cloned;
   }, [gltf]);
 
-  // AnimationMixer — groupRef에 바인딩
+  // drei useAnimations — 자동으로 mixer 업데이트 처리
+  const { actions } = useAnimations(animGltf.animations, groupRef);
+
+  // ── 마운트 시 모든 모프타겟을 0으로 초기화 (눈 돌출 방지) ──
   useEffect(() => {
-    const group = groupRef.current;
-    if (!group) return;
+    if (!clonedScene) return;
 
-    const mixer = new THREE.AnimationMixer(group);
-    mixerRef.current = mixer;
+    clonedScene.traverse((child) => {
+      if (
+        child instanceof THREE.SkinnedMesh &&
+        child.morphTargetDictionary &&
+        child.morphTargetInfluences
+      ) {
+        for (const target of ARKIT_MORPH_TARGETS) {
+          const idx = child.morphTargetDictionary[target];
+          if (idx !== undefined) {
+            child.morphTargetInfluences[idx] = 0;
+          }
+        }
+      }
+    });
+  }, [clonedScene]);
 
-    const actions: Record<string, THREE.AnimationAction> = {};
-    for (const clip of animGltf.animations) {
-      const action = mixer.clipAction(clip);
-      action.setLoop(THREE.LoopRepeat, Infinity);
-      actions[clip.name] = action;
-    }
-    actionsRef.current = actions;
+  // ── lerpMorphTarget: 모든 SkinnedMesh를 일괄 제어 ──
+  const lerpMorphTarget: LerpMorphTargetFn = useCallback(
+    (target: string, value: number, speed = 0.1) => {
+      clonedScene.traverse((child) => {
+        if (
+          child instanceof THREE.SkinnedMesh &&
+          child.morphTargetDictionary &&
+          child.morphTargetInfluences
+        ) {
+          const idx = child.morphTargetDictionary[target];
+          if (idx !== undefined) {
+            child.morphTargetInfluences[idx] = THREE.MathUtils.lerp(
+              child.morphTargetInfluences[idx],
+              value,
+              speed
+            );
+          }
+        }
+      });
+    },
+    [clonedScene]
+  );
 
-    // Idle 시작
+  // ── Idle 애니메이션 시작 ──
+  useEffect(() => {
     if (actions['Idle']) {
-      actions['Idle'].play();
+      actions['Idle'].reset().setEffectiveWeight(1).fadeIn(0.5).play();
       currentClipRef.current = 'Idle';
     }
+  }, [actions]);
 
-    return () => {
-      mixer.stopAllAction();
-      mixer.uncacheRoot(group);
-    };
-  }, [animGltf, clonedScene]);
-
-  // avatarState 변경 → 애니메이션 크로스페이드
+  // ── avatarState 변경 → 애니메이션 크로스페이드 ──
   useEffect(() => {
     const unsub = useInterviewStore.subscribe(
       (state) => state.avatarState,
       (avatarState) => {
-        const actions = actionsRef.current;
         const candidates = STATE_ANIMS[avatarState] ?? ['Idle'];
-        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        const pick =
+          candidates[Math.floor(Math.random() * candidates.length)];
         if (pick === currentClipRef.current) return;
 
         const next = actions[pick];
@@ -114,37 +125,60 @@ export function Avatar3DModel() {
       { fireImmediately: false }
     );
     return () => unsub();
+  }, [actions]);
+
+  // ── 눈 깜빡임: setTimeout 기반 (1~5초 랜덤 간격, 200ms 지속) ──
+  const scheduleBlink = useCallback(() => {
+    const interval =
+      BLINK.MIN_INTERVAL * 1000 +
+      Math.random() * (BLINK.MAX_INTERVAL - BLINK.MIN_INTERVAL) * 1000;
+
+    blinkTimeoutRef.current = setTimeout(() => {
+      isBlinkingRef.current = true;
+
+      // 200ms 후 눈 뜨기
+      blinkTimeoutRef.current = setTimeout(() => {
+        isBlinkingRef.current = false;
+        scheduleBlink();
+      }, 200);
+    }, interval);
   }, []);
 
-  useFrame((_, delta) => {
-    mixerRef.current?.update(delta);
+  useEffect(() => {
+    scheduleBlink();
+    return () => {
+      if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
+    };
+  }, [scheduleBlink]);
 
-    const morph = morphRef.current;
-    if (!morph) return;
+  // ── 매 프레임 업데이트 ──
+  useFrame(() => {
+    // 눈 깜빡임 — 모든 메시에 적용
+    const blinkValue = isBlinkingRef.current ? 1 : 0;
+    lerpMorphTarget(EXPRESSIONS.BLINK_L, blinkValue, 0.5);
+    lerpMorphTarget(EXPRESSIONS.BLINK_R, blinkValue, 0.5);
 
-    // ── 눈 깜빡임 ──
-    const b = blinkRef.current;
-    b.elapsed += delta;
-    if (!b.isBlinking && b.elapsed >= b.nextAt) {
-      b.isBlinking = true;
-      b.progress = 0;
-    }
-    if (b.isBlinking) {
-      b.progress += delta / BLINK.DURATION;
-      if (b.progress >= 2) {
-        b.isBlinking = false;
-        b.progress = 0;
-        b.nextAt = b.elapsed + BLINK.MIN_INTERVAL + Math.random() * (BLINK.MAX_INTERVAL - BLINK.MIN_INTERVAL);
+    // 표정 프리셋 적용
+    const avatarState = useInterviewStore.getState().avatarState;
+    const expressionKey = STATE_EXPRESSION_MAP[avatarState] ?? 'default';
+    const expression = FACIAL_EXPRESSIONS[expressionKey] ?? {};
+
+    // 표정 프리셋에 포함된 모프타겟만 부드럽게 적용
+    // (깜빡임, viseme, jawOpen은 제외 — 별도 시스템에서 제어)
+    for (const [target, value] of Object.entries(expression)) {
+      if (
+        target === EXPRESSIONS.BLINK_L ||
+        target === EXPRESSIONS.BLINK_R ||
+        target === EXPRESSIONS.JAW_OPEN ||
+        target.startsWith('viseme_')
+      ) {
+        continue;
       }
+      lerpMorphTarget(target, value, 0.1);
     }
-    const blinkVal = b.isBlinking
-      ? (b.progress <= 1 ? b.progress : 2 - b.progress)
-      : 0;
-    setMorph(morph, EXPRESSIONS.BLINK_L, blinkVal);
-    setMorph(morph, EXPRESSIONS.BLINK_R, blinkVal);
 
-    // ── 립싱크 ──
-    lipSync.update(morph);
+    // 립싱크 — lerpMorphTarget 전달
+    lipSync.update(lerpMorphTarget);
   });
 
   return (
@@ -152,11 +186,4 @@ export function Avatar3DModel() {
       <primitive object={clonedScene} />
     </group>
   );
-}
-
-function setMorph(morph: MorphTargetRef, name: string, value: number) {
-  const idx = morph.dict[name];
-  if (idx !== undefined && morph.mesh.morphTargetInfluences) {
-    morph.mesh.morphTargetInfluences[idx] = value;
-  }
 }
