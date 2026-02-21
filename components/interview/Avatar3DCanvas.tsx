@@ -20,20 +20,19 @@ export function Avatar3DCanvas() {
         powerPreference: 'default',
         antialias: true,
         alpha: false,
+        toneMapping: THREE.ACESFilmicToneMapping,
+        toneMappingExposure: 1.1,
       }}
+      shadows={false}
       style={{ width: '100%', height: '100%' }}
       dpr={[1, 1.5]}
       onCreated={({ camera, gl }) => {
-        // 카메라를 면접관 상반신 방향으로 향하게
         camera.lookAt(
-          new THREE.Vector3(
-            CAMERA.TARGET[0],
-            CAMERA.TARGET[1],
-            CAMERA.TARGET[2]
-          )
+          new THREE.Vector3(CAMERA.TARGET[0], CAMERA.TARGET[1], CAMERA.TARGET[2])
         );
+        // 출력 색상 공간
+        gl.outputColorSpace = THREE.SRGBColorSpace;
 
-        // WebGL 컨텍스트 손실 대응
         const canvas = gl.domElement;
         canvas.addEventListener('webglcontextlost', (e) => {
           e.preventDefault();
@@ -41,20 +40,24 @@ export function Avatar3DCanvas() {
         });
       }}
     >
-      {/* 배경색 */}
       <color attach="background" args={[OFFICE.BG_COLOR]} />
-      <fog attach="fog" args={[OFFICE.BG_COLOR, 4, 12]} />
+      <fog attach="fog" args={[OFFICE.BG_COLOR, 5, 12]} />
 
-      {/* 조명 */}
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[1, 3, 2]} intensity={1.0} color="#fff5e6" />
-      <directionalLight position={[-2, 2, 1]} intensity={0.3} color="#e6f0ff" />
-      <pointLight position={[0, 3, 0]} intensity={0.4} color="#fff0dd" distance={8} />
+      {/* 메인 키 라이트: 천장 약간 앞에서 */}
+      <directionalLight position={[0.5, 3, 2]} intensity={1.5} color="#fff8f0" />
+      {/* 필 라이트: 왼쪽 부드럽게 */}
+      <directionalLight position={[-2, 2, 1]} intensity={0.4} color="#e8f0ff" />
+      {/* 림 라이트: 뒤에서 */}
+      <directionalLight position={[0, 2, -2]} intensity={0.3} color="#ffe8cc" />
+      {/* 전체 앰비언트 */}
+      <ambientLight intensity={0.35} color="#f0e8dd" />
+      {/* 천장 패널 시뮬레이션 */}
+      <pointLight position={[0, 2.9, 0.5]} intensity={0.6} color="#fff5e8" distance={6} decay={2} />
 
       {/* 사무실 환경 */}
       <OfficeScene />
 
-      {/* VRM 모델 */}
+      {/* 아바타 모델 */}
       <Suspense fallback={null}>
         <Avatar3DModel />
       </Suspense>

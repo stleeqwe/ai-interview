@@ -1,87 +1,94 @@
 // 3D 아바타 애니메이션 설정 상수
 
 export const BLINK = {
-  /** 눈깜빡임 최소 간격 (초) */
   MIN_INTERVAL: 3,
-  /** 눈깜빡임 최대 간격 (초) */
   MAX_INTERVAL: 7,
-  /** 눈 감기/뜨기 지속 시간 (초) */
   DURATION: 0.15,
 } as const;
 
 export const BREATHING = {
-  /** 호흡 주기 속도 (Hz) */
   FREQUENCY: 0.5,
-  /** 가슴 뼈 Y축 진폭 (미터) */
   AMPLITUDE: 0.002,
 } as const;
 
 export const HEAD_SWAY = {
-  /** X축 미세 흔들림 진폭 (라디안, ~2도) */
-  AMPLITUDE_X: 0.035,
-  /** Y축 미세 흔들림 진폭 (라디안, ~2도) */
-  AMPLITUDE_Y: 0.035,
-  /** 흔들림 속도 배율 */
+  AMPLITUDE_X: 0.025,
+  AMPLITUDE_Y: 0.025,
   SPEED: 0.3,
 } as const;
 
 export const NOD = {
-  /** 고개 끄덕임 최소 간격 (초) */
   MIN_INTERVAL: 3,
-  /** 고개 끄덕임 최대 간격 (초) */
   MAX_INTERVAL: 5,
-  /** 끄덕임 진폭 (라디안, ~3도) */
-  AMPLITUDE: 0.052,
-  /** 끄덕임 지속 시간 (초) */
+  AMPLITUDE: 0.05,
   DURATION: 0.4,
 } as const;
 
 export const TRANSITION = {
-  /** 상태 전환 lerp 계수 (프레임당) */
   LERP_FACTOR: 0.08,
 } as const;
 
-export const LIP_SYNC = {
-  /** 주파수 밴드 경계 (Hz) */
-  LOW_MIN: 100,
-  LOW_MAX: 500,
-  MID_MIN: 500,
-  MID_MAX: 2000,
-  HIGH_MIN: 2000,
-  HIGH_MAX: 4000,
-  /** 노이즈 플로어 임계값 (0-255 범위) */
-  NOISE_FLOOR: 10,
-  /** 블렌드쉐이프 보간 계수 */
-  LERP_FACTOR: 0.3,
-  /** FFT 크기 */
-  FFT_SIZE: 256,
-} as const;
-
 export const CAMERA = {
-  /** Field of view - 면접실 테이블 너머 면접관 시점 */
-  FOV: 30,
-  /** 카메라 위치: 테이블 건너편 지원자 시점 (살짝 위에서) */
-  POSITION: [0, 1.35, 1.8] as const,
-  /** 면접관 상반신 중심 */
-  TARGET: [0, 1.3, 0] as const,
+  FOV: 28,
+  /** 책상 건너편 지원자 시점 */
+  POSITION: [0, 1.15, 2.0] as const,
+  /** 면접관 얼굴~상체 중심 */
+  TARGET: [0, 1.1, 0] as const,
 } as const;
 
-/** 사무실 환경 설정 */
+/** 사무실 환경 */
 export const OFFICE = {
-  /** 배경색 (따뜻한 사무실 톤) */
-  BG_COLOR: '#2a2520',
-  /** 바닥 Y 위치 */
+  BG_COLOR: '#1a1814',
   FLOOR_Y: 0,
-  /** 책상 위치/크기 */
-  DESK: {
-    POSITION: [0, 0.72, 0.9] as const,
-    SIZE: [1.4, 0.04, 0.7] as const,
-    COLOR: '#5c3d2e',
-  },
-  /** 책상 다리 */
-  DESK_LEG: {
-    HEIGHT: 0.72,
-    RADIUS: 0.025,
-    COLOR: '#3d2b1f',
-  },
+  /** 의자에 앉은 모델의 Y 오프셋 */
+  SEATED_Y: -0.55,
+} as const;
+
+/** RPM 모델(GLB)의 Mixamo 스켈레톤 뼈 이름 */
+export const BONES = {
+  HEAD: 'Head',
+  NECK: 'Neck',
+  SPINE: 'Spine',
+  SPINE1: 'Spine1',
+  SPINE2: 'Spine2',
+  HIPS: 'Hips',
+  LEFT_UP_LEG: 'LeftUpLeg',
+  RIGHT_UP_LEG: 'RightUpLeg',
+  LEFT_LEG: 'LeftLeg',
+  RIGHT_LEG: 'RightLeg',
+  LEFT_ARM: 'LeftArm',
+  RIGHT_ARM: 'RightArm',
+  LEFT_FOREARM: 'LeftForeArm',
+  RIGHT_FOREARM: 'RightForeArm',
+  LEFT_SHOULDER: 'LeftShoulder',
+  RIGHT_SHOULDER: 'RightShoulder',
+} as const;
+
+/** ARKit viseme 이름 (RPM 모델) */
+export const VISEMES = {
+  SILENT: 'viseme_sil',
+  AA: 'viseme_aa',
+  E: 'viseme_E',
+  I: 'viseme_I',
+  O: 'viseme_O',
+  U: 'viseme_U',
+  CH: 'viseme_CH',
+  DD: 'viseme_DD',
+  FF: 'viseme_FF',
+  KK: 'viseme_kk',
+  NN: 'viseme_nn',
+  PP: 'viseme_PP',
+  RR: 'viseme_RR',
+  SS: 'viseme_SS',
+  TH: 'viseme_TH',
+} as const;
+
+/** ARKit 표정 이름 */
+export const EXPRESSIONS = {
+  BLINK_L: 'eyeBlinkLeft',
+  BLINK_R: 'eyeBlinkRight',
+  JAW_OPEN: 'jawOpen',
+  MOUTH_SMILE_L: 'mouthSmileLeft',
+  MOUTH_SMILE_R: 'mouthSmileRight',
+  BROW_INNER_UP: 'browInnerUp',
 } as const;

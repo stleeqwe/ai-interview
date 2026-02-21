@@ -1,99 +1,132 @@
-import { useRef, useCallback } from 'react';
-import * as THREE from 'three';
-import type { VRM } from '@pixiv/three-vrm';
-import { useInterviewStore } from '@/stores/interviewStore';
-import { LIP_SYNC } from './constants';
-import { useAudioAnalyser } from './useAudioAnalyser';
+'use client';
 
-interface LipValues {
-  aa: number;
-  ih: number;
-  ou: number;
-  ee: number;
-  oh: number;
-}
+import { useRef, useEffect, useCallback } from 'react';
+import * as THREE from 'three';
+import type { MorphTargetRef } from '../Avatar3DModel';
+import { useInterviewStore } from '@/stores/interviewStore';
+import { VISEMES } from './constants';
+
+/** viseme별 jawOpen 가중치 */
+const JAW_OPEN_MAP: Record<string, number> = {
+  viseme_sil: 0,
+  viseme_PP: 0.05,
+  viseme_FF: 0.1,
+  viseme_TH: 0.15,
+  viseme_DD: 0.3,
+  viseme_kk: 0.25,
+  viseme_CH: 0.2,
+  viseme_SS: 0.1,
+  viseme_nn: 0.2,
+  viseme_RR: 0.25,
+  viseme_aa: 0.7,
+  viseme_E: 0.4,
+  viseme_I: 0.2,
+  viseme_O: 0.5,
+  viseme_U: 0.3,
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LipsyncInstance = any;
 
 /**
- * 오디오 주파수 데이터 → VRM 입 모양 블렌드쉐이프 매핑
+ * wawa-lipsync 기반 고정밀 립싱크
+ * MFCC 오디오 분석 → Oculus/RPM 15개 viseme 매핑
  */
 export function useLipSync() {
-  const { getFrequencyData } = useAudioAnalyser();
-  const currentValues = useRef<LipValues>({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 });
+  const lipsyncRef = useRef<LipsyncInstance>(null);
+  const connectedElRef = useRef<HTMLAudioElement | null>(null);
+  const readyRef = useRef(false);
 
-  const update = useCallback((vrm: VRM) => {
+  // wawa-lipsync 동적 로드 (SSR 안전)
+  useEffect(() => {
+    let cancelled = false;
+
+    import('wawa-lipsync').then((mod) => {
+      if (cancelled) return;
+      lipsyncRef.current = new mod.Lipsync();
+      readyRef.current = true;
+
+      // 이미 audioElement가 존재하면 즉시 연결
+      const audioEl = useInterviewStore.getState().audioElement;
+      if (audioEl && !connectedElRef.current) {
+        try {
+          lipsyncRef.current.connectAudio(audioEl);
+          connectedElRef.current = audioEl;
+        } catch (err) {
+          console.warn('[LipSync] Audio connection failed:', err);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // audioElement 변경 구독
+  useEffect(() => {
+    const unsub = useInterviewStore.subscribe(
+      (state) => state.audioElement,
+      (audioEl) => {
+        if (!audioEl) {
+          connectedElRef.current = null;
+          return;
+        }
+        if (!readyRef.current || !lipsyncRef.current) return;
+        if (connectedElRef.current === audioEl) return;
+
+        try {
+          lipsyncRef.current.connectAudio(audioEl);
+          connectedElRef.current = audioEl;
+        } catch (err) {
+          console.warn('[LipSync] Audio connection failed:', err);
+        }
+      },
+      { fireImmediately: false }
+    );
+
+    return () => unsub();
+  }, []);
+
+  const update = useCallback((morph: MorphTargetRef) => {
+    const lipsync = lipsyncRef.current;
+    if (!lipsync || !readyRef.current) return;
+
     const avatarState = useInterviewStore.getState().avatarState;
-    const data = getFrequencyData();
-    const cv = currentValues.current;
 
-    let targetAa = 0;
-    let targetIh = 0;
-    let targetOu = 0;
-    let targetEe = 0;
-    let targetOh = 0;
+    // 매 프레임 오디오 분석
+    lipsync.processAudio();
+    const activeViseme: string = lipsync.viseme ?? 'viseme_sil';
 
-    if (data && avatarState === 'speaking') {
-      const sampleRate = 48000; // WebRTC 기본 샘플레이트
-      const binCount = data.length;
-      const binWidth = sampleRate / 2 / binCount;
+    // 모든 viseme morph target 업데이트 (부드러운 전환)
+    const allVisemes = Object.values(VISEMES) as string[];
+    for (const name of allVisemes) {
+      const idx = morph.dict[name];
+      if (idx === undefined || !morph.mesh.morphTargetInfluences) continue;
 
-      // 주파수 밴드별 에너지 추출
-      const low = getBandEnergy(data, binWidth, LIP_SYNC.LOW_MIN, LIP_SYNC.LOW_MAX);
-      const mid = getBandEnergy(data, binWidth, LIP_SYNC.MID_MIN, LIP_SYNC.MID_MAX);
-      const high = getBandEnergy(data, binWidth, LIP_SYNC.HIGH_MIN, LIP_SYNC.HIGH_MAX);
+      const isActive = avatarState === 'speaking' && name === activeViseme;
+      const target = isActive ? 1 : 0;
+      const lerpSpeed = isActive ? 0.4 : 0.3;
 
-      // 노이즈 플로어 적용
-      const nf = LIP_SYNC.NOISE_FLOOR / 255;
-      const lowClean = Math.max(0, low - nf);
-      const midClean = Math.max(0, mid - nf);
-      const highClean = Math.max(0, high - nf);
-
-      // 밴드별 → 입 모양 매핑
-      targetAa = Math.min(1, lowClean * 2.5);   // 저주파 → 턱 벌림
-      targetIh = Math.min(1, midClean * 2.0);    // 중주파 → 입 벌림
-      targetEe = Math.min(1, midClean * 1.5);    // 중주파 → 입 벌림 (변형)
-      targetOu = Math.min(1, highClean * 2.0);   // 고주파 → 입 동그라미
-      targetOh = Math.min(1, highClean * 1.5);   // 고주파 → 입 동그라미 (변형)
+      morph.mesh.morphTargetInfluences[idx] = THREE.MathUtils.lerp(
+        morph.mesh.morphTargetInfluences[idx],
+        target,
+        lerpSpeed
+      );
     }
 
-    // 부드러운 보간
-    const lf = LIP_SYNC.LERP_FACTOR;
-    cv.aa = THREE.MathUtils.lerp(cv.aa, targetAa, lf);
-    cv.ih = THREE.MathUtils.lerp(cv.ih, targetIh, lf);
-    cv.ou = THREE.MathUtils.lerp(cv.ou, targetOu, lf);
-    cv.ee = THREE.MathUtils.lerp(cv.ee, targetEe, lf);
-    cv.oh = THREE.MathUtils.lerp(cv.oh, targetOh, lf);
-
-    // VRM 블렌드쉐이프 적용
-    vrm.expressionManager?.setValue('aa', cv.aa);
-    vrm.expressionManager?.setValue('ih', cv.ih);
-    vrm.expressionManager?.setValue('ou', cv.ou);
-    vrm.expressionManager?.setValue('ee', cv.ee);
-    vrm.expressionManager?.setValue('oh', cv.oh);
-  }, [getFrequencyData]);
+    // jawOpen — 활성 viseme에 비례하여 턱 벌림
+    const jawIdx = morph.dict['jawOpen'];
+    if (jawIdx !== undefined && morph.mesh.morphTargetInfluences) {
+      const jawTarget =
+        avatarState === 'speaking' ? (JAW_OPEN_MAP[activeViseme] ?? 0) : 0;
+      morph.mesh.morphTargetInfluences[jawIdx] = THREE.MathUtils.lerp(
+        morph.mesh.morphTargetInfluences[jawIdx],
+        jawTarget,
+        0.35
+      );
+    }
+  }, []);
 
   return { update };
-}
-
-/**
- * 지정 주파수 범위의 평균 에너지 (0-1)
- */
-function getBandEnergy(
-  data: Uint8Array<ArrayBufferLike>,
-  binWidth: number,
-  freqMin: number,
-  freqMax: number
-): number {
-  const startBin = Math.floor(freqMin / binWidth);
-  const endBin = Math.min(data.length - 1, Math.ceil(freqMax / binWidth));
-
-  if (startBin >= endBin) return 0;
-
-  let sum = 0;
-  let count = 0;
-  for (let i = startBin; i <= endBin; i++) {
-    sum += data[i];
-    count++;
-  }
-
-  return count > 0 ? sum / count / 255 : 0;
 }
