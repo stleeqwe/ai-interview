@@ -3,8 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { useInterviewStore } from '@/stores/interviewStore';
 
-const MAX_INTERVIEW_SECONDS = 30 * 60; // 30분
-const WARNING_SECONDS = 25 * 60; // 25분
+const MAX_INTERVIEW_SECONDS = 10 * 60; // 10분
+const WARNING_SECONDS = 8 * 60; // 8분
 
 interface UseElapsedTimerReturn {
   elapsedSeconds: number;

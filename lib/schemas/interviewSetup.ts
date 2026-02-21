@@ -67,7 +67,7 @@ export const InterviewSetupSchema = z.object({
     difficulty_escalation: z.string().describe('난이도 조절 전략'),
   }),
   interviewers: z.array(InterviewerSchema).min(1).max(1),
-  questions: z.array(QuestionSchema).min(5).max(5),
+  questions: z.array(QuestionSchema).min(3).max(5),
 });
 
 export type InterviewSetupJSON = z.infer<typeof InterviewSetupSchema>;

@@ -7,7 +7,7 @@ const ALLOWED_MIMES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]);
 
-const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.md', '.txt'];
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'];
 
 export interface ParseResult {
   text: string;
@@ -28,7 +28,7 @@ export function validateResumeFile(file: File): string | null {
 
   const ext = getExtension(file.name);
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    return '지원하지 않는 파일 형식입니다. PDF, DOCX, MD 파일만 업로드 가능합니다.';
+    return '지원하지 않는 파일 형식입니다. PDF, DOCX, MD, TXT 파일만 업로드 가능합니다.';
   }
 
   return null;
@@ -51,7 +51,7 @@ export async function parseResume(buffer: Buffer, fileName: string): Promise<str
     return result.text;
   }
 
-  if (ext === '.docx' || ext === '.doc') {
+  if (ext === '.docx') {
     if (
       detectedType &&
       !ALLOWED_MIMES.has(detectedType.mime)

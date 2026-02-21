@@ -3,7 +3,7 @@
 import { Clock } from 'lucide-react';
 import { useElapsedTimer } from '@/hooks/useElapsedTimer';
 
-const MAX_INTERVIEW_SECONDS = 30 * 60;
+const MAX_INTERVIEW_SECONDS = 10 * 60;
 
 export function Timer() {
   const { elapsedSeconds, formattedTime, isWarning, isTimeUp } = useElapsedTimer();

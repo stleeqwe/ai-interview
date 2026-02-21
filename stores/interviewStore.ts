@@ -3,6 +3,14 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { InterviewSetupJSON } from '@/lib/schemas/interviewSetup';
 import type { EvaluationJSON } from '@/lib/schemas/evaluation';
+import type { GroundingReport } from '@/lib/types/grounding';
+
+export interface ClaudeMetrics {
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  stopReason: string;
+}
 
 export interface TranscriptEntry {
   speaker: 'interviewer' | 'candidate';
@@ -22,6 +30,8 @@ interface InterviewState {
 
   // 화면 2→3: 분석 결과
   interviewSetup: InterviewSetupJSON | null;
+  groundingReport: GroundingReport | null;
+  claudeMetrics: ClaudeMetrics | null;
 
   // 화면 3: 면접 진행
   transcript: TranscriptEntry[];
@@ -37,6 +47,8 @@ interface InterviewState {
   setResumeText: (text: string, fileName: string) => void;
   setJobPostingText: (text: string, companyName?: string, position?: string) => void;
   setInterviewSetup: (setup: InterviewSetupJSON) => void;
+  setGroundingReport: (report: GroundingReport) => void;
+  setClaudeMetrics: (metrics: ClaudeMetrics) => void;
   addTranscript: (entry: TranscriptEntry) => void;
   setAvatarState: (state: AvatarState) => void;
   incrementTimer: () => void;
@@ -51,6 +63,8 @@ const SESSION_STORAGE_KEY = 'ai-interview-setup';
 const TRANSCRIPT_STORAGE_KEY = 'ai-interview-transcript';
 const EVALUATION_STORAGE_KEY = 'ai-interview-evaluation';
 const RESUME_TEXT_STORAGE_KEY = 'ai-interview-resume-text';
+const GROUNDING_REPORT_KEY = 'ai-interview-grounding-report';
+const CLAUDE_METRICS_KEY = 'ai-interview-claude-metrics';
 
 function loadFromSession<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
@@ -88,6 +102,8 @@ const initialState = {
   jobCompanyName: null,
   jobPosition: null,
   interviewSetup: null as InterviewSetupJSON | null,
+  groundingReport: null as GroundingReport | null,
+  claudeMetrics: null as ClaudeMetrics | null,
   transcript: [],
   avatarState: 'idle' as AvatarState,
   elapsedSeconds: 0,
@@ -119,6 +135,20 @@ export const useInterviewStore = create<InterviewState>()(
       saveInterviewSetup(setup);
       set((s) => {
         s.interviewSetup = setup;
+      });
+    },
+
+    setGroundingReport: (report) => {
+      saveToSession(GROUNDING_REPORT_KEY, report);
+      set((s) => {
+        s.groundingReport = report;
+      });
+    },
+
+    setClaudeMetrics: (metrics) => {
+      saveToSession(CLAUDE_METRICS_KEY, metrics);
+      set((s) => {
+        s.claudeMetrics = metrics;
       });
     },
 
@@ -161,11 +191,15 @@ export const useInterviewStore = create<InterviewState>()(
       const savedTranscript = loadFromSession<TranscriptEntry[]>(TRANSCRIPT_STORAGE_KEY);
       const savedEvaluation = loadFromSession<EvaluationJSON>(EVALUATION_STORAGE_KEY);
       const savedResumeText = loadFromSession<string>(RESUME_TEXT_STORAGE_KEY);
+      const savedGrounding = loadFromSession<GroundingReport>(GROUNDING_REPORT_KEY);
+      const savedClaudeMetrics = loadFromSession<ClaudeMetrics>(CLAUDE_METRICS_KEY);
       set((s) => {
         if (savedSetup) s.interviewSetup = savedSetup;
         if (savedTranscript?.length) s.transcript = savedTranscript;
         if (savedEvaluation) s.evaluation = savedEvaluation;
         if (savedResumeText) s.resumeText = savedResumeText;
+        if (savedGrounding) s.groundingReport = savedGrounding;
+        if (savedClaudeMetrics) s.claudeMetrics = savedClaudeMetrics;
       });
     },
 
@@ -174,6 +208,8 @@ export const useInterviewStore = create<InterviewState>()(
       saveToSession(TRANSCRIPT_STORAGE_KEY, null);
       saveToSession(EVALUATION_STORAGE_KEY, null);
       saveToSession(RESUME_TEXT_STORAGE_KEY, null);
+      saveToSession(GROUNDING_REPORT_KEY, null);
+      saveToSession(CLAUDE_METRICS_KEY, null);
       set(() => ({
         ...initialState,
       }));

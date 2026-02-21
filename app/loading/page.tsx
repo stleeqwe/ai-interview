@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { useInterviewStore } from '@/stores/interviewStore';
 
 const STEPS = [
+  '관련 정보 검색 중...',
   '이력서 분석 중...',
   '채용공고 분석 중...',
   '질문 시나리오 설계 중...',

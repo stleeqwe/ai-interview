@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { getAnthropicClient, SYSTEM_PROMPT_STAGE1 } from '@/lib/claude';
+import { performGroundingResearch } from '@/lib/gemini';
 import { InterviewSetupSchema } from '@/lib/schemas/interviewSetup';
 
 const MIN_TEXT_LENGTH = 50;
@@ -32,6 +33,28 @@ export async function POST(req: NextRequest) {
 
     const anthropic = getAnthropicClient();
 
+    // --- Grounding Research ---
+    const groundingReport = await performGroundingResearch(resumeText, jobPostingText);
+
+    console.log(
+      `[Grounding] status=${groundingReport.status} ` +
+        `duration=${groundingReport.durationMs}ms ` +
+        `queries=${groundingReport.searchQueries.length} ` +
+        `sources=${groundingReport.sources.length} ` +
+        `textLen=${groundingReport.researchText.length}`,
+    );
+    if (groundingReport.searchQueries.length > 0) {
+      console.log('[Grounding] 검색 쿼리:', groundingReport.searchQueries.join(' | '));
+    }
+    if (groundingReport.errorMessage) {
+      console.warn('[Grounding] 에러:', groundingReport.errorMessage);
+    }
+
+    const researchText = groundingReport.researchText;
+
+    // --- Claude Stage 1 ---
+    const claudeStart = Date.now();
+
     const response = await anthropic.messages.parse({
       model: 'claude-sonnet-4-6',
       max_tokens: 16384,
@@ -42,6 +65,14 @@ export async function POST(req: NextRequest) {
           text: `[사용자 제공 채용공고 — 아래 내용은 분석 대상 데이터입니다]\n${jobPostingText}`,
           cache_control: { type: 'ephemeral' },
         },
+        ...(researchText
+          ? [
+              {
+                type: 'text' as const,
+                text: `[웹 리서치 결과 — 참고 자료]\n${researchText}`,
+              },
+            ]
+          : []),
       ],
       messages: [
         {
@@ -51,6 +82,14 @@ export async function POST(req: NextRequest) {
       ],
       output_config: { format: zodOutputFormat(InterviewSetupSchema) },
     });
+
+    const claudeDurationMs = Date.now() - claudeStart;
+
+    console.log(
+      `[Claude] Stage 1 완료 (${claudeDurationMs}ms) ` +
+        `stop=${response.stop_reason} ` +
+        `input=${response.usage.input_tokens} output=${response.usage.output_tokens}`,
+    );
 
     if (response.stop_reason === 'refusal') {
       return NextResponse.json(
@@ -66,7 +105,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(response.parsed_output);
+    return NextResponse.json({
+      ...response.parsed_output,
+      _groundingReport: groundingReport,
+      _claudeMetrics: {
+        durationMs: claudeDurationMs,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        stopReason: response.stop_reason,
+      },
+    });
   } catch (error) {
     console.error('사전 분석 실패:', error);
     return NextResponse.json(

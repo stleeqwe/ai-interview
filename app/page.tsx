@@ -19,6 +19,8 @@ export default function Home() {
   const jobPostingText = useInterviewStore((s) => s.jobPostingText);
   const interviewSetup = useInterviewStore((s) => s.interviewSetup);
   const setInterviewSetup = useInterviewStore((s) => s.setInterviewSetup);
+  const setGroundingReport = useInterviewStore((s) => s.setGroundingReport);
+  const setClaudeMetrics = useInterviewStore((s) => s.setClaudeMetrics);
 
   const isReady = !!resumeText && !!jobPostingText;
   const hasExistingSetup = !!interviewSetup;
@@ -48,10 +50,15 @@ export default function Home() {
         throw new Error(data.error || '면접 분석에 실패했습니다.');
       }
 
-      setInterviewSetup(data);
+      // 모니터링 데이터 추출 후 분리
+      const { _groundingReport, _claudeMetrics, ...interviewSetup } = data;
+      if (_groundingReport) setGroundingReport(_groundingReport);
+      if (_claudeMetrics) setClaudeMetrics(_claudeMetrics);
+      setInterviewSetup(interviewSetup);
       router.push('/loading');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 요청에 실패했습니다.');
+    } finally {
       setIsAnalyzing(false);
     }
   };
