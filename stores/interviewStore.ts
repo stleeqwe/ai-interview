@@ -71,33 +71,33 @@ const RESUME_TEXT_STORAGE_KEY = 'ai-interview-resume-text';
 const GROUNDING_REPORT_KEY = 'ai-interview-grounding-report';
 const CLAUDE_METRICS_KEY = 'ai-interview-claude-metrics';
 
-function loadFromSession<T>(key: string): T | null {
+function loadFromStorage<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
   try {
-    const stored = sessionStorage.getItem(key);
+    const stored = localStorage.getItem(key);
     return stored ? JSON.parse(stored) : null;
   } catch {
     return null;
   }
 }
 
-function saveToSession(key: string, value: unknown) {
+function saveToStorage(key: string, value: unknown) {
   if (typeof window === 'undefined') return;
   try {
     if (value !== null && value !== undefined) {
-      sessionStorage.setItem(key, JSON.stringify(value));
+      localStorage.setItem(key, JSON.stringify(value));
     } else {
-      sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
     }
-  } catch { /* sessionStorage 용량 초과 등 무시 */ }
+  } catch { /* localStorage 용량 초과 등 무시 */ }
 }
 
 function loadInterviewSetup(): InterviewSetupJSON | null {
-  return loadFromSession<InterviewSetupJSON>(SESSION_STORAGE_KEY);
+  return loadFromStorage<InterviewSetupJSON>(SESSION_STORAGE_KEY);
 }
 
 function saveInterviewSetup(setup: InterviewSetupJSON | null) {
-  saveToSession(SESSION_STORAGE_KEY, setup);
+  saveToStorage(SESSION_STORAGE_KEY, setup);
 }
 
 const initialState = {
@@ -123,7 +123,7 @@ export const useInterviewStore = create<InterviewState>()(
     ...initialState,
 
     setResumeText: (text, fileName) => {
-      saveToSession(RESUME_TEXT_STORAGE_KEY, text);
+      saveToStorage(RESUME_TEXT_STORAGE_KEY, text);
       set((s) => {
         s.resumeText = text;
         s.resumeFileName = fileName;
@@ -145,14 +145,14 @@ export const useInterviewStore = create<InterviewState>()(
     },
 
     setGroundingReport: (report) => {
-      saveToSession(GROUNDING_REPORT_KEY, report);
+      saveToStorage(GROUNDING_REPORT_KEY, report);
       set((s) => {
         s.groundingReport = report;
       });
     },
 
     setClaudeMetrics: (metrics) => {
-      saveToSession(CLAUDE_METRICS_KEY, metrics);
+      saveToStorage(CLAUDE_METRICS_KEY, metrics);
       set((s) => {
         s.claudeMetrics = metrics;
       });
@@ -161,7 +161,7 @@ export const useInterviewStore = create<InterviewState>()(
     addTranscript: (entry) =>
       set((s) => {
         s.transcript.push(entry);
-        saveToSession(TRANSCRIPT_STORAGE_KEY, s.transcript);
+        saveToStorage(TRANSCRIPT_STORAGE_KEY, s.transcript);
       }),
 
     setAvatarState: (state) =>
@@ -192,7 +192,7 @@ export const useInterviewStore = create<InterviewState>()(
       }),
 
     setEvaluation: (evaluation) => {
-      saveToSession(EVALUATION_STORAGE_KEY, evaluation);
+      saveToStorage(EVALUATION_STORAGE_KEY, evaluation);
       set((s) => {
         s.evaluation = evaluation;
       });
@@ -200,11 +200,11 @@ export const useInterviewStore = create<InterviewState>()(
 
     hydrateFromSession: () => {
       const savedSetup = loadInterviewSetup();
-      const savedTranscript = loadFromSession<TranscriptEntry[]>(TRANSCRIPT_STORAGE_KEY);
-      const savedEvaluation = loadFromSession<EvaluationJSON>(EVALUATION_STORAGE_KEY);
-      const savedResumeText = loadFromSession<string>(RESUME_TEXT_STORAGE_KEY);
-      const savedGrounding = loadFromSession<GroundingReport>(GROUNDING_REPORT_KEY);
-      const savedClaudeMetrics = loadFromSession<ClaudeMetrics>(CLAUDE_METRICS_KEY);
+      const savedTranscript = loadFromStorage<TranscriptEntry[]>(TRANSCRIPT_STORAGE_KEY);
+      const savedEvaluation = loadFromStorage<EvaluationJSON>(EVALUATION_STORAGE_KEY);
+      const savedResumeText = loadFromStorage<string>(RESUME_TEXT_STORAGE_KEY);
+      const savedGrounding = loadFromStorage<GroundingReport>(GROUNDING_REPORT_KEY);
+      const savedClaudeMetrics = loadFromStorage<ClaudeMetrics>(CLAUDE_METRICS_KEY);
       set((s) => {
         if (savedSetup) s.interviewSetup = savedSetup;
         if (savedTranscript?.length) s.transcript = savedTranscript;
@@ -217,11 +217,11 @@ export const useInterviewStore = create<InterviewState>()(
 
     reset: () => {
       saveInterviewSetup(null);
-      saveToSession(TRANSCRIPT_STORAGE_KEY, null);
-      saveToSession(EVALUATION_STORAGE_KEY, null);
-      saveToSession(RESUME_TEXT_STORAGE_KEY, null);
-      saveToSession(GROUNDING_REPORT_KEY, null);
-      saveToSession(CLAUDE_METRICS_KEY, null);
+      saveToStorage(TRANSCRIPT_STORAGE_KEY, null);
+      saveToStorage(EVALUATION_STORAGE_KEY, null);
+      saveToStorage(RESUME_TEXT_STORAGE_KEY, null);
+      saveToStorage(GROUNDING_REPORT_KEY, null);
+      saveToStorage(CLAUDE_METRICS_KEY, null);
       set(() => ({
         ...initialState,
       }));

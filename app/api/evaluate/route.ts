@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGeminiClient } from '@/lib/gemini';
-import { SYSTEM_PROMPT_STAGE3 } from '@/lib/claude';
+import { getAnthropicClient, SYSTEM_PROMPT_STAGE3 } from '@/lib/claude';
 import { EvaluationSchema } from '@/lib/schemas/evaluation';
 
 const JSON_STRUCTURE_GUIDE = `
 ## 출력 JSON 구조
 
 반드시 아래 구조와 정확히 일치하는 JSON을 출력하세요. 추가 필드를 넣지 마세요.
+유효한 JSON만 출력하세요. 마크다운 코드블록으로 감싸지 마세요.
 
 {
   "overall_evaluation": {
@@ -66,6 +66,17 @@ const JSON_STRUCTURE_GUIDE = `
   "next_preparation_guide": "string"
 }`;
 
+/** Claude 응답에서 JSON 텍스트를 추출하는 헬퍼 */
+function extractJsonText(response: { content: Array<{ type: string; text?: string }> }): string | null {
+  const textBlock = response.content.find((b) => b.type === 'text');
+  if (!textBlock || textBlock.type !== 'text' || !('text' in textBlock)) return null;
+  let jsonText = (textBlock as { type: 'text'; text: string }).text.trim();
+  if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  }
+  return jsonText;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { interviewSetup, transcript, resumeText } = await req.json();
@@ -77,8 +88,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 시스템 프롬프트 조합
-    const systemParts = [SYSTEM_PROMPT_STAGE3, JSON_STRUCTURE_GUIDE];
+    const systemParts: string[] = [SYSTEM_PROMPT_STAGE3, JSON_STRUCTURE_GUIDE];
 
     if (resumeText) {
       systemParts.push(`[원본 이력서]\n${resumeText}`);
@@ -86,34 +96,37 @@ export async function POST(req: NextRequest) {
 
     systemParts.push(`[면접 설정]\n${JSON.stringify(interviewSetup, null, 2)}`);
 
-    const gemini = getGeminiClient();
+    const anthropic = getAnthropicClient();
 
-    const response = await gemini.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `다음 면접 대화 기록을 분석하여 평가 리포트를 JSON으로 생성해주세요.\n\n[면접 대화 기록]\n${transcript}`,
-      config: {
-        systemInstruction: systemParts.join('\n\n'),
-        responseMimeType: 'application/json',
-        temperature: 0.3,
-      },
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 16384,
+      system: systemParts.join('\n\n'),
+      messages: [
+        {
+          role: 'user',
+          content: `다음 면접 대화 기록을 분석하여 평가 리포트를 JSON으로 생성해주세요.\n\n반드시 유효한 JSON만 출력하세요. 마크다운 코드블록(\`\`\`json)으로 감싸지 마세요.\n\n[면접 대화 기록]\n${transcript}`,
+        },
+      ],
     });
 
-    const text = response.text;
-    if (!text) {
+    const jsonText = extractJsonText(response);
+    if (!jsonText) {
       return NextResponse.json(
         { error: '평가 리포트 생성 결과가 비어있습니다. 다시 시도해주세요.' },
         { status: 422 }
       );
     }
 
-    // Zod로 검증 및 파싱
-    const parsed = EvaluationSchema.parse(JSON.parse(text));
+    const parsed = EvaluationSchema.parse(JSON.parse(jsonText));
 
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error('사후 평가 실패:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error('사후 평가 실패:', errMsg, errStack);
     return NextResponse.json(
-      { error: '평가 리포트 생성에 실패했습니다. 다시 시도해주세요.' },
+      { error: '평가 리포트 생성에 실패했습니다. 다시 시도해주세요.', detail: errMsg },
       { status: 500 }
     );
   }

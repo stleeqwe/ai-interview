@@ -53,6 +53,7 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
           modelFPS: 30,
           modelPixelRatio: window.devicePixelRatio,
           avatarMood: 'neutral',
+          avatarMute: true, // 립싱크만 처리, 오디오 재생은 WebRTC HTMLAudioElement 담당
           lightAmbientColor: 0xffffff,
           lightAmbientIntensity: 2,
           lightDirectColor: 0xaaaacc,
@@ -83,10 +84,13 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
         console.log('[TalkingHead] avatar loaded, starting stream...');
 
         // 스트리밍 세션 시작 (OpenAI Realtime 24kHz PCM)
+        // gain:0 — 오디오 재생은 WebRTC HTMLAudioElement가 담당 (에코 캔슬레이션 유지)
+        // TalkingHead는 립싱크 분석만 수행
         await head.streamStart(
           {
             sampleRate: 24000,
             lipsyncLang: 'en',
+            gain: 0,
           },
           () => {
             // onAudioStart

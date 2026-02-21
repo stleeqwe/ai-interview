@@ -26,12 +26,6 @@ export default function Home() {
   const hasExistingSetup = !!interviewSetup;
 
   const handleStartAnalysis = async () => {
-    // 이미 시나리오가 있으면 분석 건너뛰고 바로 진행
-    if (hasExistingSetup) {
-      router.push('/loading');
-      return;
-    }
-
     if (!resumeText || !jobPostingText) return;
 
     setError(null);
@@ -95,10 +89,43 @@ export default function Home() {
             <p className="text-sm text-destructive text-center">{error}</p>
           )}
 
+          {hasExistingSetup && (
+            <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-primary">
+                저장된 면접 시나리오가 있습니다
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {interviewSetup.company_analysis?.company_name} · {interviewSetup.company_analysis?.position}
+              </p>
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={() => router.push('/interview')}
+              >
+                <Mic className="mr-2 h-4 w-4" />
+                바로 면접 시작
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full"
+                size="sm"
+                onClick={() => {
+                  useInterviewStore.getState().reset();
+                  setError(null);
+                }}
+              >
+                시나리오 초기화 (새로 분석)
+              </Button>
+            </div>
+          )}
+
+          <Separator />
+
           <Button
             className="w-full"
             size="lg"
-            disabled={(!isReady && !hasExistingSetup) || isAnalyzing}
+            variant={hasExistingSetup ? 'outline' : 'default'}
+            disabled={!isReady || isAnalyzing}
             onClick={handleStartAnalysis}
           >
             {isAnalyzing ? (
@@ -107,26 +134,11 @@ export default function Home() {
                 면접 시나리오 분석 중...
               </>
             ) : hasExistingSetup ? (
-              '이전 시나리오로 면접 시작'
+              '새 시나리오로 다시 분석'
             ) : (
               '면접 시작하기'
             )}
           </Button>
-
-          {hasExistingSetup && (
-            <Button
-              variant="ghost"
-              className="w-full"
-              size="sm"
-              disabled={!isReady || isAnalyzing}
-              onClick={() => {
-                useInterviewStore.getState().reset();
-                setError(null);
-              }}
-            >
-              시나리오 초기화 (새로 분석)
-            </Button>
-          )}
 
           <p className="text-center text-xs text-muted-foreground">
             마이크 권한이 필요합니다 · 면접 시간은 최대 30분입니다

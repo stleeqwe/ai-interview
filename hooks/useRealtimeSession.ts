@@ -37,9 +37,8 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
         const pc = new RTCPeerConnection();
         pcRef.current = pc;
 
-        // 2. 오디오 출력 엘리먼트 연결
-        // TalkingHead 로딩 전에는 이 엘리먼트로 음성 출력 (폴백)
-        // TalkingHead가 준비되면 response.audio.delta 핸들러에서 mute 처리
+        // 2. 오디오 출력 엘리먼트 연결 (WebRTC 오디오 재생 + 에코 캔슬레이션 유지)
+        // TalkingHead는 gain:0으로 립싱크만 처리, 실제 오디오 재생은 이 엘리먼트 담당
         const audioEl = document.createElement('audio');
         audioEl.autoplay = true;
         audioEl.style.display = 'none';
@@ -194,15 +193,11 @@ export function useRealtimeSession(): UseRealtimeSessionReturn {
 
       case 'response.audio.delta': {
         store.setAvatarState('speaking');
-        // base64 오디오 → PCM Int16 ArrayBuffer → TalkingHead streamAudio
+        // base64 오디오 → PCM ArrayBuffer → TalkingHead 립싱크 전용 (avatarMute)
+        // 오디오 재생은 WebRTC HTMLAudioElement가 담당 (에코 캔슬레이션 유지)
         const delta = (event as { delta?: string }).delta;
         const head = store.talkingHeadRef;
         if (delta && head) {
-          // TalkingHead가 오디오를 처리하므로 WebRTC audioEl은 mute (이중 재생 방지)
-          const audioEl = store.audioElement;
-          if (audioEl && !audioEl.muted) {
-            audioEl.muted = true;
-          }
           try {
             const binaryStr = atob(delta);
             const len = binaryStr.length;
