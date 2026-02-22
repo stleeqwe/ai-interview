@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 
 interface UseSpeechToTextReturn {
   isListening: boolean;
@@ -24,8 +24,14 @@ function getSpeechRecognitionClass(): (new () => SpeechRecognitionInstance) | nu
 export function useSpeechToText(): UseSpeechToTextReturn {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const isSupported = useMemo(() => typeof window !== 'undefined' && !!getSpeechRecognitionClass(), []);
+  const [isSupported, setIsSupported] = useState(false); // BUG 5 fix: useState + useEffect for SSR safety
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  // BUG 5 fix: Check SpeechRecognition support after mount (client-side only)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR에서 false로 초기화 후 클라이언트에서 실제 지원 여부 확인
+    setIsSupported(!!getSpeechRecognitionClass());
+  }, []);
 
   const startListening = useCallback(() => {
     const SpeechRecognition = getSpeechRecognitionClass();

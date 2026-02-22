@@ -118,7 +118,7 @@ export default function InterviewPage() {
   useEffect(() => {
     if (isWarning && isInterviewActive && !warningSentRef.current) {
       warningSentRef.current = true;
-      sendMessage('[시스템 알림] 면접 시간이 2분 남았습니다. 남은 질문을 마무리해주세요.');
+      sendMessage('[시스템 알림] 면접 시간이 2분 남았습니다. 남은 질문을 마무리해주세요.', { isSystemMessage: true });
     }
   }, [isWarning, isInterviewActive, sendMessage]);
 

@@ -78,7 +78,7 @@ export default function FeedbackPage() {
               parsedSuccessfully: true,
               inputTokens: _evaluationMetrics.inputTokens,
               outputTokens: _evaluationMetrics.outputTokens,
-              stopReason: _evaluationMetrics.stopReason,
+              stopReason: _evaluationMetrics.finishReason,
             });
           }
           monitor.addTimelineEvent('stage3', 'stage3.completed', _evaluationMetrics.durationMs);

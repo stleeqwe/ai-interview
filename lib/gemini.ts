@@ -78,10 +78,10 @@ export async function geminiGenerateJSON(params: {
     },
   });
 
-  let text = response.text ?? '';
+  let text = (response.text ?? '').trim(); // BUG 7 fix: trim before fence check
   // 마크다운 코드 펜스 자동 제거
   if (text.startsWith('```')) {
-    text = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    text = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
   }
 
   const usage = response.usageMetadata;

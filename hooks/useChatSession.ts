@@ -15,7 +15,7 @@ interface UseChatSessionReturn {
   status: SessionStatus;
   isAiThinking: boolean;
   startInterview: () => Promise<void>;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, options?: { isSystemMessage?: boolean }) => Promise<void>;
   endInterview: () => void;
 }
 
@@ -24,6 +24,7 @@ export function useChatSession(): UseChatSessionReturn {
   const [isAiThinking, setIsAiThinking] = useState(false);
   const historyRef = useRef<ChatMessage[]>([]);
   const endingRef = useRef(false);
+  const sendingRef = useRef(false); // BUG 6 fix: mutex for sendMessage
 
   const callChatAPI = useCallback(async (userMessage?: string) => {
     const store = useInterviewStore.getState();
@@ -66,7 +67,7 @@ export function useChatSession(): UseChatSessionReturn {
   }, []);
 
   const startInterview = useCallback(async () => {
-    if (status !== 'idle') return;
+    if (status !== 'idle' && status !== 'error') return; // BUG 2 fix: allow retry from error
     setStatus('connecting');
     setIsAiThinking(true);
     historyRef.current = [];
@@ -111,29 +112,32 @@ export function useChatSession(): UseChatSessionReturn {
     }
   }, [status, callChatAPI]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, options?: { isSystemMessage?: boolean }) => {
     if (status !== 'connected' || endingRef.current) return;
+    if (sendingRef.current) return; // BUG 6 fix: prevent concurrent sends
+    sendingRef.current = true;
 
     const store = useInterviewStore.getState();
 
-    // 사용자 답변 트랜스크립트 추가
-    store.addTranscript({
-      speaker: 'candidate',
-      text,
-      timestamp: Date.now(),
-    });
-
-    // 이력에 사용자 메시지 추가
-    historyRef.current.push({ role: 'user', text });
+    // BUG 3 fix: 시스템 메시지는 트랜스크립트에 추가하지 않음
+    if (!options?.isSystemMessage) {
+      store.addTranscript({
+        speaker: 'candidate',
+        text,
+        timestamp: Date.now(),
+      });
+    }
 
     setStatus('sending');
     setIsAiThinking(true);
     store.setAvatarState('idle');
 
     try {
+      // BUG 1 fix: historyRef에 push하지 않고 userMessage로만 전달 (서버가 처리)
       const data = await callChatAPI(text);
 
-      // 이력에 AI 응답 추가
+      // API 호출 후에 이력에 추가 (중복 방지)
+      historyRef.current.push({ role: 'user', text });
       historyRef.current.push({ role: 'model', text: data.reply });
 
       // 트랜스크립트에 면접관 응답 추가
@@ -168,6 +172,8 @@ export function useChatSession(): UseChatSessionReturn {
         severity: 'error',
         message: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      sendingRef.current = false; // BUG 6 fix: release mutex
     }
   }, [status, callChatAPI, endInterview]);
 
