@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { ResumeUploader } from '@/components/upload/ResumeUploader';
 import { JobPostingInput } from '@/components/upload/JobPostingInput';
 import { useInterviewStore } from '@/stores/interviewStore';
+import { useMonitorStore } from '@/stores/monitorStore';
 
 export default function Home() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function Home() {
   const interviewSetup = useInterviewStore((s) => s.interviewSetup);
   const setInterviewSetup = useInterviewStore((s) => s.setInterviewSetup);
   const setGroundingReport = useInterviewStore((s) => s.setGroundingReport);
-  const setClaudeMetrics = useInterviewStore((s) => s.setClaudeMetrics);
+  const setAnalysisMetrics = useInterviewStore((s) => s.setAnalysisMetrics);
 
   const isReady = !!resumeText && !!jobPostingText;
   const hasExistingSetup = !!interviewSetup;
@@ -30,6 +31,13 @@ export default function Home() {
 
     setError(null);
     setIsAnalyzing(true);
+
+    // 이전 면접 데이터 초기화 (재분석 시 이전 transcript/evaluation 잔존 방지)
+    useInterviewStore.getState().resetForNewInterview();
+
+    const monitor = useMonitorStore.getState();
+    monitor.startPipeline();
+    monitor.addTimelineEvent('stage0', 'pipeline.started');
 
     try {
       const res = await fetch('/api/analyze', {
@@ -41,13 +49,74 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) {
+        monitor.addError({
+          stage: 'stage0',
+          category: 'gemini.api',
+          severity: 'error',
+          message: data.error || 'API 호출 실패',
+          context: { status: res.status },
+        });
         throw new Error(data.error || '면접 분석에 실패했습니다.');
       }
 
       // 모니터링 데이터 추출 후 분리
-      const { _groundingReport, _claudeMetrics, ...interviewSetup } = data;
+      const { _groundingReport, _analysisMetrics, ...interviewSetup } = data;
       if (_groundingReport) setGroundingReport(_groundingReport);
-      if (_claudeMetrics) setClaudeMetrics(_claudeMetrics);
+      if (_analysisMetrics) {
+        // API 응답 스키마 → 스토어 AnalysisMetrics 인터페이스로 변환
+        setAnalysisMetrics({
+          durationMs: _analysisMetrics.totalDurationMs ?? 0,
+          inputTokens: (_analysisMetrics.stage0Tokens?.input ?? 0) + (_analysisMetrics.stage1Tokens?.input ?? 0),
+          outputTokens: (_analysisMetrics.stage0Tokens?.output ?? 0) + (_analysisMetrics.stage1Tokens?.output ?? 0),
+          finishReason: _analysisMetrics.finishReason ?? 'STOP',
+        });
+
+        // LLM Span: Stage 0
+        if (_analysisMetrics.stage0StartedAt) {
+          monitor.addLLMSpan({
+            traceId: monitor.currentTraceId ?? '',
+            stage: 'stage0',
+            model: 'gemini-3-flash-preview',
+            startedAt: _analysisMetrics.stage0StartedAt,
+            endedAt: _analysisMetrics.stage0EndedAt,
+            durationMs: _analysisMetrics.stage0DurationMs,
+            systemPrompt: _analysisMetrics.stage0SystemPrompt ?? '',
+            userMessage: _analysisMetrics.stage0UserMessage ?? '',
+            rawResponse: _analysisMetrics.stage0RawResponse ?? '',
+            parsedSuccessfully: true,
+            inputTokens: _analysisMetrics.stage0Tokens?.input ?? 0,
+            outputTokens: _analysisMetrics.stage0Tokens?.output ?? 0,
+            stopReason: 'STOP',
+          });
+          monitor.addTimelineEvent('stage0', 'stage0.completed', _analysisMetrics.stage0DurationMs);
+        }
+
+        // Timeline: Grounding
+        if (_groundingReport?.durationMs) {
+          monitor.addTimelineEvent('grounding', 'grounding.completed', _groundingReport.durationMs);
+        }
+
+        // LLM Span: Stage 1
+        if (_analysisMetrics.stage1StartedAt) {
+          monitor.addLLMSpan({
+            traceId: monitor.currentTraceId ?? '',
+            stage: 'stage1',
+            model: 'gemini-3-flash-preview',
+            startedAt: _analysisMetrics.stage1StartedAt,
+            endedAt: _analysisMetrics.stage1EndedAt,
+            durationMs: _analysisMetrics.stage1DurationMs,
+            systemPrompt: _analysisMetrics.stage1SystemPrompt ?? '',
+            userMessage: _analysisMetrics.stage1UserMessage ?? '',
+            rawResponse: _analysisMetrics.stage1RawResponse ?? '',
+            parsedSuccessfully: true,
+            inputTokens: _analysisMetrics.stage1Tokens?.input ?? 0,
+            outputTokens: _analysisMetrics.stage1Tokens?.output ?? 0,
+            stopReason: _analysisMetrics.finishReason ?? 'STOP',
+          });
+          monitor.addTimelineEvent('stage1', 'stage1.completed', _analysisMetrics.stage1DurationMs);
+        }
+      }
+
       setInterviewSetup(interviewSetup);
       router.push('/loading');
     } catch (err) {
@@ -100,7 +169,10 @@ export default function Home() {
               <Button
                 className="w-full"
                 size="lg"
-                onClick={() => router.push('/interview')}
+                onClick={() => {
+                  useInterviewStore.getState().resetForNewInterview();
+                  router.push('/interview');
+                }}
               >
                 <Mic className="mr-2 h-4 w-4" />
                 바로 면접 시작
@@ -141,7 +213,7 @@ export default function Home() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            마이크 권한이 필요합니다 · 면접 시간은 최대 30분입니다
+            텍스트 채팅으로 면접이 진행됩니다 · 면접 시간은 최대 10분입니다
           </p>
         </CardContent>
       </Card>

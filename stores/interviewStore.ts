@@ -5,11 +5,28 @@ import type { InterviewSetupJSON } from '@/lib/schemas/interviewSetup';
 import type { EvaluationJSON } from '@/lib/schemas/evaluation';
 import type { GroundingReport } from '@/lib/types/grounding';
 
-export interface ClaudeMetrics {
+export interface AnalysisMetrics {
   durationMs: number;
   inputTokens: number;
   outputTokens: number;
-  stopReason: string;
+  finishReason: string;
+}
+
+export interface ChatMetrics {
+  durationMs: number;
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  model: string;
+  timestamp: string;
+}
+
+export interface EvaluationMetrics {
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  finishReason: string;
+  model: string;
+  timestamp: string;
 }
 
 export interface TranscriptEntry {
@@ -34,33 +51,38 @@ interface InterviewState {
   // 화면 2→3: 분석 결과
   interviewSetup: InterviewSetupJSON | null;
   groundingReport: GroundingReport | null;
-  claudeMetrics: ClaudeMetrics | null;
+  analysisMetrics: AnalysisMetrics | null;
 
   // 화면 3: 면접 진행
   transcript: TranscriptEntry[];
   avatarState: AvatarState;
   elapsedSeconds: number;
   isInterviewActive: boolean;
-  audioElement: HTMLAudioElement | null;
   talkingHeadRef: TalkingHeadInstance | null;
 
   // 화면 4: 평가
   evaluation: EvaluationJSON | null;
+
+  // 모니터링 메트릭
+  chatMetrics: ChatMetrics | null;
+  evaluationMetrics: EvaluationMetrics | null;
 
   // 액션
   setResumeText: (text: string, fileName: string) => void;
   setJobPostingText: (text: string, companyName?: string, position?: string) => void;
   setInterviewSetup: (setup: InterviewSetupJSON) => void;
   setGroundingReport: (report: GroundingReport) => void;
-  setClaudeMetrics: (metrics: ClaudeMetrics) => void;
+  setAnalysisMetrics: (metrics: AnalysisMetrics) => void;
+  setChatMetrics: (metrics: ChatMetrics) => void;
+  setEvaluationMetrics: (metrics: EvaluationMetrics) => void;
   addTranscript: (entry: TranscriptEntry) => void;
   setAvatarState: (state: AvatarState) => void;
   incrementTimer: () => void;
   setInterviewActive: (active: boolean) => void;
-  setAudioElement: (el: HTMLAudioElement | null) => void;
   setTalkingHeadRef: (ref: TalkingHeadInstance | null) => void;
   setEvaluation: (evaluation: EvaluationJSON | null) => void;
   hydrateFromSession: () => void;
+  resetForNewInterview: () => void;
   reset: () => void;
 }
 
@@ -69,12 +91,14 @@ const TRANSCRIPT_STORAGE_KEY = 'ai-interview-transcript';
 const EVALUATION_STORAGE_KEY = 'ai-interview-evaluation';
 const RESUME_TEXT_STORAGE_KEY = 'ai-interview-resume-text';
 const GROUNDING_REPORT_KEY = 'ai-interview-grounding-report';
-const CLAUDE_METRICS_KEY = 'ai-interview-claude-metrics';
+const ANALYSIS_METRICS_KEY = 'ai-interview-analysis-metrics';
+const CHAT_METRICS_KEY = 'ai-interview-chat-metrics';
+const EVALUATION_METRICS_KEY = 'ai-interview-evaluation-metrics';
 
 function loadFromStorage<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
   try {
-    const stored = localStorage.getItem(key);
+    const stored = sessionStorage.getItem(key);
     return stored ? JSON.parse(stored) : null;
   } catch {
     return null;
@@ -85,11 +109,11 @@ function saveToStorage(key: string, value: unknown) {
   if (typeof window === 'undefined') return;
   try {
     if (value !== null && value !== undefined) {
-      localStorage.setItem(key, JSON.stringify(value));
+      sessionStorage.setItem(key, JSON.stringify(value));
     } else {
-      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     }
-  } catch { /* localStorage 용량 초과 등 무시 */ }
+  } catch { /* sessionStorage 용량 초과 등 무시 */ }
 }
 
 function loadInterviewSetup(): InterviewSetupJSON | null {
@@ -108,12 +132,13 @@ const initialState = {
   jobPosition: null,
   interviewSetup: null as InterviewSetupJSON | null,
   groundingReport: null as GroundingReport | null,
-  claudeMetrics: null as ClaudeMetrics | null,
+  analysisMetrics: null as AnalysisMetrics | null,
+  chatMetrics: null as ChatMetrics | null,
+  evaluationMetrics: null as EvaluationMetrics | null,
   transcript: [],
   avatarState: 'idle' as AvatarState,
   elapsedSeconds: 0,
   isInterviewActive: false,
-  audioElement: null as HTMLAudioElement | null,
   talkingHeadRef: null as TalkingHeadInstance | null,
   evaluation: null,
 };
@@ -151,10 +176,24 @@ export const useInterviewStore = create<InterviewState>()(
       });
     },
 
-    setClaudeMetrics: (metrics) => {
-      saveToStorage(CLAUDE_METRICS_KEY, metrics);
+    setAnalysisMetrics: (metrics) => {
+      saveToStorage(ANALYSIS_METRICS_KEY, metrics);
       set((s) => {
-        s.claudeMetrics = metrics;
+        s.analysisMetrics = metrics;
+      });
+    },
+
+    setChatMetrics: (metrics) => {
+      saveToStorage(CHAT_METRICS_KEY, metrics);
+      set((s) => {
+        s.chatMetrics = metrics;
+      });
+    },
+
+    setEvaluationMetrics: (metrics) => {
+      saveToStorage(EVALUATION_METRICS_KEY, metrics);
+      set((s) => {
+        s.evaluationMetrics = metrics;
       });
     },
 
@@ -179,12 +218,6 @@ export const useInterviewStore = create<InterviewState>()(
         s.isInterviewActive = active;
       }),
 
-    setAudioElement: (el) =>
-      set((s) => {
-        // HTMLAudioElement은 DOM 객체이므로 immer draft 변환 우회
-        (s as unknown as { audioElement: HTMLAudioElement | null }).audioElement = el;
-      }),
-
     setTalkingHeadRef: (ref) =>
       set((s) => {
         // TalkingHead 인스턴스는 외부 객체이므로 immer draft 변환 우회
@@ -204,14 +237,35 @@ export const useInterviewStore = create<InterviewState>()(
       const savedEvaluation = loadFromStorage<EvaluationJSON>(EVALUATION_STORAGE_KEY);
       const savedResumeText = loadFromStorage<string>(RESUME_TEXT_STORAGE_KEY);
       const savedGrounding = loadFromStorage<GroundingReport>(GROUNDING_REPORT_KEY);
-      const savedClaudeMetrics = loadFromStorage<ClaudeMetrics>(CLAUDE_METRICS_KEY);
+      const savedAnalysisMetrics = loadFromStorage<AnalysisMetrics>(ANALYSIS_METRICS_KEY);
+      const savedChatMetrics = loadFromStorage<ChatMetrics>(CHAT_METRICS_KEY);
+      const savedEvaluationMetrics = loadFromStorage<EvaluationMetrics>(EVALUATION_METRICS_KEY);
       set((s) => {
         if (savedSetup) s.interviewSetup = savedSetup;
         if (savedTranscript?.length) s.transcript = savedTranscript;
         if (savedEvaluation) s.evaluation = savedEvaluation;
         if (savedResumeText) s.resumeText = savedResumeText;
         if (savedGrounding) s.groundingReport = savedGrounding;
-        if (savedClaudeMetrics) s.claudeMetrics = savedClaudeMetrics;
+        if (savedAnalysisMetrics) s.analysisMetrics = savedAnalysisMetrics;
+        if (savedChatMetrics) s.chatMetrics = savedChatMetrics;
+        if (savedEvaluationMetrics) s.evaluationMetrics = savedEvaluationMetrics;
+      });
+    },
+
+    resetForNewInterview: () => {
+      // 면접 진행/평가 데이터만 초기화 (시나리오 설정은 유지)
+      saveToStorage(TRANSCRIPT_STORAGE_KEY, null);
+      saveToStorage(EVALUATION_STORAGE_KEY, null);
+      saveToStorage(CHAT_METRICS_KEY, null);
+      saveToStorage(EVALUATION_METRICS_KEY, null);
+      set((s) => {
+        s.transcript = [];
+        s.evaluation = null;
+        s.elapsedSeconds = 0;
+        s.isInterviewActive = false;
+        s.avatarState = 'idle';
+        s.chatMetrics = null;
+        s.evaluationMetrics = null;
       });
     },
 
@@ -221,7 +275,9 @@ export const useInterviewStore = create<InterviewState>()(
       saveToStorage(EVALUATION_STORAGE_KEY, null);
       saveToStorage(RESUME_TEXT_STORAGE_KEY, null);
       saveToStorage(GROUNDING_REPORT_KEY, null);
-      saveToStorage(CLAUDE_METRICS_KEY, null);
+      saveToStorage(ANALYSIS_METRICS_KEY, null);
+      saveToStorage(CHAT_METRICS_KEY, null);
+      saveToStorage(EVALUATION_METRICS_KEY, null);
       set(() => ({
         ...initialState,
       }));

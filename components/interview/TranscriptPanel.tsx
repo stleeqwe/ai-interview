@@ -3,7 +3,11 @@
 import { useEffect, useRef } from 'react';
 import { useInterviewStore, TranscriptEntry } from '@/stores/interviewStore';
 
-export function TranscriptPanel() {
+interface TranscriptPanelProps {
+  isAiThinking?: boolean;
+}
+
+export function TranscriptPanel({ isAiThinking }: TranscriptPanelProps) {
   const transcript = useInterviewStore((s) => s.transcript);
   const interviewSetup = useInterviewStore((s) => s.interviewSetup);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -15,9 +19,9 @@ export function TranscriptPanel() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript.length]);
+  }, [transcript.length, isAiThinking]);
 
-  if (transcript.length === 0) {
+  if (transcript.length === 0 && !isAiThinking) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-white/40">
         면접이 시작되면 대화 내용이 여기에 표시됩니다
@@ -48,6 +52,22 @@ export function TranscriptPanel() {
           </div>
         </div>
       ))}
+
+      {/* AI 생각 중 인디케이터 */}
+      {isAiThinking && (
+        <div className="flex flex-col items-start">
+          <span className="mb-0.5 text-[10px] font-medium text-white/40">
+            {interviewerName}
+          </span>
+          <div className="rounded-lg bg-white/10 px-3 py-2 text-sm text-white/50">
+            <span className="inline-flex items-center gap-1">
+              <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
+              <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
+              <span className="animate-bounce" style={{ animationDelay: '300ms' }}>.</span>
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

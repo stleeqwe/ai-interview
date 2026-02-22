@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Avatar3D } from '@/components/interview/Avatar3D';
 import { useInterviewStore } from '@/stores/interviewStore';
+
+const emptySubscribe = () => () => {};
+function useIsMounted() {
+  return useSyncExternalStore(emptySubscribe, () => true, () => false);
+}
 
 const AVATAR_OPTIONS: { label: string; path: string }[] = [
   { label: 'RPM (default)', path: '/models/rpm-avatar.glb' },
@@ -16,8 +21,8 @@ export default function TestAvatarPage() {
   const avatarState = useInterviewStore((s) => s.avatarState);
   const setAvatarState = useInterviewStore((s) => s.setAvatarState);
   const setInterviewSetup = useInterviewStore((s) => s.setInterviewSetup);
-  const [mounted, setMounted] = useState(false);
   const [selectedModel, setSelectedModel] = useState(AVATAR_OPTIONS[0].path);
+  const mounted = useIsMounted();
 
   useEffect(() => {
     setInterviewSetup({
@@ -46,7 +51,6 @@ export default function TestAvatarPage() {
       system_prompt: '',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
-    setMounted(true);
   }, [setInterviewSetup]);
 
   if (!mounted) return null;

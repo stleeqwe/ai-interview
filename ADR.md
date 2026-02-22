@@ -1,73 +1,87 @@
 # ADR.md — 아키텍처 결정 기록
 
-## ADR-001: 멀티 LLM 파이프라인 설계
+## ADR-001: Gemini 단일 벤더 파이프라인
 
-**상태:** 채택
+**상태:** 채택 (ADR-001-v1 대체)
 
 **맥락:**
-면접 시나리오 생성에 단일 LLM을 사용하면 환각(hallucination)과 최신 정보 부재 문제가 발생한다. 회사의 최근 기술 동향, 업계 트렌드 같은 실시간 정보가 필요하다.
+초기 버전에서는 3개 벤더(Claude + Gemini + OpenAI)를 파이프라인으로 연결했으나, API 키 3종 관리, 높은 비용($2.20/회), 벤더 간 장애 전파 문제가 있었다.
 
 **결정:**
-3개의 LLM을 파이프라인으로 연결하는 구조를 채택:
-1. **Claude Sonnet** (Stage 0) — 이력서/공고 분석 후 웹 리서치 지시문 생성
-2. **Gemini Flash** (Grounding) — Google Search 기반 웹 리서치 수행
-3. **Claude Sonnet** (Stage 1) — 리서치 결과 + 분석을 종합하여 면접 시나리오 설계
-4. **GPT Realtime** (면접 진행) — 실시간 음성 대화
+전체 파이프라인을 Gemini 3 Flash 단일 모델로 통합:
+1. **Gemini Flash** (Stage 0) — 이력서/공고 분석 후 웹 리서치 지시문 생성
+2. **Gemini Search** (Grounding) — Google Search 기반 웹 리서치 수행
+3. **Gemini Flash** (Stage 1) — 리서치 결과 + 분석을 종합하여 면접 시나리오 설계
+4. **Gemini Flash** (Stage 2) — 턴제 텍스트 채팅 면접 진행
 5. **Gemini Flash** (Stage 3) — 대화록 분석 후 평가 리포트 생성
 
+**근거:**
+- 비용 94% 절감 ($2.20 → ~$0.10/회)
+- API 키 1개(`GOOGLE_API_KEY`)만 관리
+- Gemini Flash의 JSON 구조화 출력 성능이 면접 시나리오 설계에 충분
+- 그라운딩 리서치와 동일 벤더로 컨텍스트 전달 최적화
+
 **결과:**
-- 장점: 각 LLM의 강점 활용 (Claude=구조화 분석, Gemini=웹 검색, GPT=실시간 음성)
-- 장점: 그라운딩 리서치로 환각 감소, 현실감 있는 질문 생성
-- 단점: API 호출 증가로 생성 시간 증가 (~2-3분)
-- 단점: 3개 API 키 관리 필요
+- 장점: 운영 단순화, 비용 대폭 절감, 단일 SDK(`@google/genai`)
+- 장점: 그라운딩 리서치로 환각 감소, 현실감 있는 질문 생성 유지
+- 단점: 단일 벤더 의존 (Google AI 장애 시 전체 서비스 중단)
+- 트레이드오프: Claude의 구조화 분석 품질 → Gemini Flash의 비용 효율로 대체
 
 ---
 
-## ADR-002: OpenAI Realtime API + WebRTC 선택
+## ADR-002: 턴제 텍스트 채팅 면접 (Stateless)
 
-**상태:** 채택
+**상태:** 채택 (ADR-002-v1 대체 — OpenAI Realtime WebRTC)
 
 **맥락:**
-실시간 음성 면접을 구현하기 위해 TTS/STT + 일반 LLM API vs. OpenAI Realtime API를 비교 검토했다.
+초기 버전은 OpenAI Realtime API + WebRTC로 실시간 음성 면접을 구현했으나, 비용이 높고($1.70/회), 브라우저 마이크 권한 문제, WebRTC 연결 불안정 등의 이슈가 있었다.
 
 **결정:**
-OpenAI Realtime API (WebRTC 모드)를 채택.
+Gemini `generateContent()` 기반 Stateless 턴제 텍스트 채팅으로 교체.
+
+**API 설계:**
+```
+POST /api/chat
+Request:  { interviewSetup, history: [{role, text}...], userMessage }
+Response: { reply, isInterviewEnd, _chatMetrics }
+```
 
 **근거:**
-- 양방향 오디오를 단일 API로 처리 (STT + LLM + TTS 통합)
-- 서버 VAD로 자연스러운 턴테이킹 (발화 감지 → 자동 응답)
-- WebRTC 기반이므로 별도 웹소켓 서버 불필요
-- Ephemeral client secret으로 클라이언트에서 직접 연결 (서버 프록시 불필요)
+- Stateless: 매 요청에 전체 대화 이력 포함 → 서버 세션 관리 불필요
+- 서버리스 배포 완전 호환 (WebSocket/WebRTC 불필요)
+- 마이크 권한 문제 제거 (텍스트 입력 기본, STT 선택)
+- 면접 품질 유지: 시스템 프롬프트에 꼬리질문 가이드, concern_signal 모니터링, `[INTERVIEW_END]` 토큰 포함
+- 브라우저 Web Speech API로 선택적 음성 입력 지원
 
 **결과:**
-- 장점: 구현 복잡도 대폭 감소, 지연 시간 최소화
-- 장점: 서버리스 배포 가능 (세션 발급만 서버에서 처리)
-- 단점: OpenAI 모델만 사용 가능 (면접 진행 단계)
-- 단점: 비용이 높은 편 (Realtime API 가격)
+- 장점: 구현 복잡도 대폭 감소 (WebRTC 제거), 비용 ~97% 절감
+- 장점: 모든 브라우저에서 작동 (WebRTC/마이크 의존성 제거)
+- 단점: 실시간 음성 대화의 몰입감 감소
+- 단점: 턴당 1-3초 응답 지연 (Gemini API 호출)
+- 단점: 대화 이력이 길어지면 입력 토큰 증가 (10턴 기준 ~50K 토큰)
 
 ---
 
-## ADR-003: @met4citizen/talkinghead 3D 아바타
+## ADR-003: 3D 아바타 표정/자세 애니메이션
 
-**상태:** 채택
+**상태:** 채택 (ADR-003-v1 수정 — 립싱크 제거)
 
 **맥락:**
-면접관 아바타로 2D 이미지, Lottie 애니메이션, 3D 모델 등의 선택지가 있었다. 몰입감 있는 면접 경험을 위해 립싱크가 가능한 3D 아바타가 필요했다.
+초기 버전은 `@met4citizen/talkinghead` 라이브러리로 오디오 기반 실시간 립싱크를 구현했으나, 텍스트 채팅 전환으로 오디오 파이프라인이 제거되었다.
 
 **결정:**
-`@met4citizen/talkinghead` 라이브러리를 채택하여 ReadyPlayerMe GLB 모델 기반 3D 아바타를 구현.
-
-**근거:**
-- Three.js 기반으로 GLB 모델 로딩 및 립싱크 지원
-- `streamAudio()` API로 실시간 PCM 오디오 → 립싱크 변환
-- 다양한 무드(neutral, happy 등)와 제스처 지원
-- MIT 라이선스
+ReadyPlayerMe GLB 모델 + Mixamo 애니메이션 기반 표정/자세 애니메이션만 유지:
+- `speaking` 상태: TalkingOne/TalkingTwo/TalkingThree 애니메이션 + 사인파 기반 턱 애니메이션
+- `listening` 상태: HappyIdle 애니메이션 + 중립 표정
+- `idle` 상태: Idle 애니메이션 + 중립 표정
+- 눈 깜빡임: 1~5초 랜덤 간격, 200ms 지속
+- 상태별 표정 프리셋 (STATE_EXPRESSION_MAP)으로 자연스러운 전환
 
 **결과:**
-- 장점: OpenAI Realtime API의 오디오 델타를 실시간 립싱크로 변환 가능
-- 장점: ReadyPlayerMe 아바타를 자유롭게 교체 가능
-- 단점: 라이브러리 내부의 동적 import가 Turbopack과 호환 안됨 → postinstall 패치 필요
-- 단점: WebGL 필수 (미지원 시 2D 폴백으로 대응)
+- 장점: 오디오 파이프라인 완전 제거로 코드 단순화
+- 장점: TalkingHead 라이브러리 의존성 약화 (wawa-lipsync 불필요)
+- 장점: WebGL만으로 동작 (WebAudio 불필요)
+- 단점: 립싱크 없이 단순 턱 애니메이션으로 시각적 현실감 감소
 
 ---
 
@@ -88,9 +102,8 @@ Zustand + Immer + subscribeWithSelector 조합을 채택.
 - sessionStorage 연동으로 새로고침 시에도 상태 복원
 
 **결과:**
-- 장점: WebRTC 콜백에서 `useInterviewStore.getState()`로 직접 상태 접근 가능
+- 장점: 비동기 콜백에서 `useInterviewStore.getState()`로 직접 상태 접근 가능
 - 장점: Immer로 transcript 배열 push 등 뮤터블 패턴 안전하게 사용
-- 단점: HTMLAudioElement, TalkingHead 인스턴스 등 DOM 객체는 Immer draft 우회 필요
 
 ---
 
@@ -99,7 +112,7 @@ Zustand + Immer + subscribeWithSelector 조합을 채택.
 **상태:** 채택
 
 **맥락:**
-Claude의 JSON 출력이 기대한 구조와 다를 수 있다. 면접 시나리오와 평가 리포트의 구조가 보장되지 않으면 UI가 깨진다.
+Gemini의 JSON 출력이 기대한 구조와 다를 수 있다. 면접 시나리오와 평가 리포트의 구조가 보장되지 않으면 UI가 깨진다.
 
 **결정:**
 Zod 4 스키마로 모든 LLM JSON 출력을 런타임 검증.
@@ -117,25 +130,39 @@ Zod 4 스키마로 모든 LLM JSON 출력을 런타임 검증.
 
 ---
 
-## ADR-006: 음성 출력 이중 경로 (WebRTC + TalkingHead)
+## ADR-006: `geminiGenerateJSON()` 공통 헬퍼
 
-**상태:** 채택
+**상태:** 채택 (ADR-006-v1 대체 — 이중 오디오 경로)
 
 **맥락:**
-OpenAI Realtime API는 WebRTC `ontrack`으로 오디오 스트림을 전송하고, 동시에 DataChannel로 `response.audio.delta` 이벤트(base64 PCM)도 전송한다. TalkingHead 립싱크는 PCM 데이터가 필요하다.
+텍스트 채팅 전환으로 오디오 이중 경로(HTMLAudioElement + TalkingHead)가 불필요해졌다. 대신 Stage 0, 1, 3에서 반복되는 Gemini JSON 생성 패턴을 공통화할 필요가 생겼다.
 
 **결정:**
-이중 경로 설계 — HTMLAudioElement(폴백) + TalkingHead(립싱크):
-1. 기본: HTMLAudioElement로 WebRTC 오디오 재생 (TalkingHead 로딩 전 폴백)
-2. TalkingHead 준비 완료 시: audioEl을 mute하고 DataChannel PCM → TalkingHead로 전환
+`lib/gemini.ts`에 `geminiGenerateJSON()` 헬퍼 함수 추가:
+
+```typescript
+export async function geminiGenerateJSON(params: {
+  systemPrompt: string;
+  userMessage: string;
+  maxOutputTokens?: number;
+  temperature?: number;
+}): Promise<{
+  text: string;
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  finishReason: string;
+}>
+```
 
 **근거:**
-- TalkingHead 로딩에 수 초 소요 → 그 사이 면접관 음성이 안 들리는 문제 방지
-- TalkingHead가 준비되면 자동으로 전환하여 이중 재생 방지
+- 마크다운 코드 펜스(```json) 자동 제거
+- `usageMetadata`에서 토큰 카운트 자동 추출
+- `finishReason` 자동 추출
+- Stage 0, 1, 3에서 동일한 패턴 재사용
 
 **결과:**
-- 장점: TalkingHead 로딩 상태와 무관하게 항상 음성 출력 보장
-- 장점: 3D 아바타 크래시 시에도 음성은 계속 들림
+- 장점: API Route 코드 간소화 (30-40줄 → 5줄)
+- 장점: 토큰 추출, 에러 처리 등 보일러플레이트 제거
 
 ---
 
@@ -170,8 +197,36 @@ loaders[lang]?.()
 
 ---
 
+## ADR-008: IndexedDB 기반 파이프라인 모니터링
+
+**상태:** 채택
+
+**맥락:**
+LLM 파이프라인의 각 단계별 입출력, 토큰 사용량, 지연 시간 등을 추적할 필요가 있었다. 서버 사이드 로깅은 serverless 환경에서 어렵고, 개발 중 브라우저에서 직접 확인하는 것이 편리하다.
+
+**결정:**
+Dexie (IndexedDB) 기반 클라이언트 사이드 모니터링 + `/dev/monitor` 대시보드:
+- `llmSpans`: 각 LLM 호출의 프롬프트, 응답, 토큰, 지연 시간
+- `pipelineLogs`: 파이프라인 전체 로그 (traceId 기반)
+- `realtimeEvents`: 채팅 이벤트 추적
+- `errors`: 구조화된 에러 로그
+
+**근거:**
+- TTL 7일 + LRU 5세션 기반 자동 정리
+- 개발 전용 (`/dev/monitor`, `/dev/grounding`)
+- 프로덕션 빌드에서도 데이터 수집은 되지만 대시보드는 개발용
+
+**결과:**
+- 장점: 브라우저에서 파이프라인 전체 흐름 시각화
+- 장점: LLM 프롬프트/응답 원문 확인 가능
+- 단점: 클라이언트 사이드만 — 서버 로그와 불일치 가능
+
+---
+
 ## 변경 이력
 
 | 날짜 | ADR | 변경 |
 |------|-----|------|
 | 2026-02-21 | 001-007 | 초기 ADR 작성 (해커톤 MVP) |
+| 2026-02-22 | 001, 002, 003, 006 | Gemini 단일 벤더 전환 — 멀티 LLM → Gemini Flash, WebRTC 음성 → 텍스트 채팅, 립싱크 제거, 오디오 이중 경로 → geminiGenerateJSON 헬퍼 |
+| 2026-02-22 | 008 | 신규 — IndexedDB 기반 파이프라인 모니터링 |

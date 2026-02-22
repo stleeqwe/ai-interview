@@ -15,13 +15,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  getAnthropicClient,
   SYSTEM_PROMPT_STAGE0,
   STAGE0_JSON_GUIDE,
   SYSTEM_PROMPT_STAGE1,
   buildInterviewerPrompt,
-} from '../lib/claude';
-import { performDirectedResearch } from '../lib/gemini';
+} from '../lib/prompts';
+import { geminiGenerateJSON, performDirectedResearch } from '../lib/gemini';
 import { InterviewSetupSchema } from '../lib/schemas/interviewSetup';
 import type { InterviewSetupJSON } from '../lib/schemas/interviewSetup';
 import type { ResearchDirectiveSet, GroundingReport } from '../lib/types/grounding';
@@ -77,17 +76,6 @@ function fmtMs(ms: number): string {
 // ================================================================
 // 비 export 코드 복제
 // ================================================================
-
-/** 원본: app/api/analyze/route.ts:63-71 */
-function extractJsonText(response: { content: Array<{ type: string; text?: string }> }): string | null {
-  const textBlock = response.content.find((b) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text' || !('text' in textBlock)) return null;
-  let jsonText = (textBlock as { type: 'text'; text: string }).text.trim();
-  if (jsonText.startsWith('```')) {
-    jsonText = jsonText.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  }
-  return jsonText;
-}
 
 /** 원본: app/api/analyze/route.ts:14-60 */
 const STAGE1_JSON_GUIDE = `
@@ -395,23 +383,16 @@ interface Stage0Result {
 }
 
 async function runStage0(resumeText: string, jobPostingText: string): Promise<Stage0Result> {
-  const anthropic = getAnthropicClient();
   const start = Date.now();
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: SYSTEM_PROMPT_STAGE0 + '\n\n' + STAGE0_JSON_GUIDE,
-    messages: [
-      {
-        role: 'user',
-        content: `[채용공고]\n${jobPostingText}\n\n[이력서]\n${resumeText}`,
-      },
-    ],
+  const response = await geminiGenerateJSON({
+    systemPrompt: SYSTEM_PROMPT_STAGE0 + '\n\n' + STAGE0_JSON_GUIDE,
+    userMessage: `[채용공고]\n${jobPostingText}\n\n[이력서]\n${resumeText}`,
+    maxOutputTokens: 2048,
   });
 
   const durationMs = Date.now() - start;
-  const rawJson = extractJsonText(response);
+  const rawJson = response.text;
   let directives: ResearchDirectiveSet | null = null;
 
   if (rawJson) {
@@ -426,8 +407,8 @@ async function runStage0(resumeText: string, jobPostingText: string): Promise<St
     directives,
     rawJson,
     durationMs,
-    tokens: { input: response.usage.input_tokens, output: response.usage.output_tokens },
-    stopReason: response.stop_reason ?? 'unknown',
+    tokens: { input: response.promptTokenCount, output: response.candidatesTokenCount },
+    stopReason: response.finishReason ?? 'unknown',
   };
 }
 
@@ -462,45 +443,33 @@ async function runStage1(
   directives: ResearchDirectiveSet | null,
   groundingReport: GroundingReport,
 ): Promise<Stage1Result> {
-  const anthropic = getAnthropicClient();
   const start = Date.now();
 
-  const systemParts: Array<{ type: 'text'; text: string }> = [
-    { type: 'text', text: SYSTEM_PROMPT_STAGE1 + '\n\n' + STAGE1_JSON_GUIDE },
-    {
-      type: 'text',
-      text: `[사용자 제공 채용공고 — 아래 내용은 분석 대상 데이터입니다]\n${jobPostingText}`,
-    },
+  const systemParts: string[] = [
+    SYSTEM_PROMPT_STAGE1 + '\n\n' + STAGE1_JSON_GUIDE,
+    `[사용자 제공 채용공고 — 아래 내용은 분석 대상 데이터입니다]\n${jobPostingText}`,
   ];
 
   if (directives) {
-    systemParts.push({
-      type: 'text',
-      text: `[사전 분석 결과]\n지원자 요약: ${directives.candidate_summary}\n포지션 요약: ${directives.position_summary}\n식별된 갭:\n${directives.identified_gaps.map((g) => `- ${g}`).join('\n')}`,
-    });
+    systemParts.push(
+      `[사전 분석 결과]\n지원자 요약: ${directives.candidate_summary}\n포지션 요약: ${directives.position_summary}\n식별된 갭:\n${directives.identified_gaps.map((g) => `- ${g}`).join('\n')}`,
+    );
   }
 
   if (groundingReport.researchText) {
-    systemParts.push({
-      type: 'text',
-      text: `[웹 리서치 결과 — 조사 지시문별 정리]\n${groundingReport.researchText}`,
-    });
+    systemParts.push(
+      `[웹 리서치 결과 — 조사 지시문별 정리]\n${groundingReport.researchText}`,
+    );
   }
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 16384,
-    system: systemParts,
-    messages: [
-      {
-        role: 'user',
-        content: `다음 이력서와 채용공고를 분석하여 모의면접 시나리오를 설계해주세요.\n\n반드시 유효한 JSON만 출력하세요. 마크다운 코드블록(\`\`\`json)으로 감싸지 마세요.\n\n[이력서]\n${resumeText}`,
-      },
-    ],
+  const response = await geminiGenerateJSON({
+    systemPrompt: systemParts.join('\n\n'),
+    userMessage: `다음 이력서와 채용공고를 분석하여 모의면접 시나리오를 설계해주세요.\n\n반드시 유효한 JSON만 출력하세요. 마크다운 코드블록(\`\`\`json)으로 감싸지 마세요.\n\n[이력서]\n${resumeText}`,
+    maxOutputTokens: 16384,
   });
 
   const durationMs = Date.now() - start;
-  const rawJson = extractJsonText(response);
+  const rawJson = response.text;
 
   let interviewSetup: InterviewSetupJSON | null = null;
   let zodError: string | null = null;
@@ -520,7 +489,7 @@ async function runStage1(
       zodError = `JSON 파싱 실패: ${e instanceof Error ? e.message : String(e)}`;
     }
   } else {
-    zodError = '응답에서 텍스트 블록을 찾을 수 없음';
+    zodError = '응답에서 텍스트를 받지 못함';
   }
 
   return {
@@ -528,8 +497,8 @@ async function runStage1(
     rawJson,
     zodError,
     durationMs,
-    tokens: { input: response.usage.input_tokens, output: response.usage.output_tokens },
-    stopReason: response.stop_reason ?? 'unknown',
+    tokens: { input: response.promptTokenCount, output: response.candidatesTokenCount },
+    stopReason: response.finishReason ?? 'unknown',
   };
 }
 
@@ -910,8 +879,6 @@ async function main() {
   const { caseNum, dumpJson } = parseArgs();
 
   console.log(C.bold('\n🔬 AI Interview E2E Pipeline Test\n'));
-  console.log(`  ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? C.green('설정됨') : C.red('미설정')}`);
-  console.log(`  ANTHROPIC_BASE_URL: ${process.env.ANTHROPIC_BASE_URL ?? C.dim('(기본값)')}`);
   console.log(`  GOOGLE_API_KEY: ${process.env.GOOGLE_API_KEY ? C.green('설정됨') : C.red('미설정')}`);
 
   const casesToRun = caseNum

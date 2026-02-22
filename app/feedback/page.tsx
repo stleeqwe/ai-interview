@@ -10,6 +10,7 @@ import { QuestionEvaluation } from '@/components/feedback/QuestionEvaluation';
 import { SkillRadar } from '@/components/feedback/SkillRadar';
 import { ActionItems } from '@/components/feedback/ActionItems';
 import { useInterviewStore, formatTranscript } from '@/stores/interviewStore';
+import { useMonitorStore } from '@/stores/monitorStore';
 
 export default function FeedbackPage() {
   const router = useRouter();
@@ -57,7 +58,34 @@ export default function FeedbackPage() {
           throw new Error(data.error || '평가 생성에 실패했습니다.');
         }
 
-        setEvaluation(data);
+        const { _evaluationMetrics, ...evaluationData } = data;
+        if (_evaluationMetrics) {
+          useInterviewStore.getState().setEvaluationMetrics(_evaluationMetrics);
+
+          // 모니터링: Evaluation LLM Span
+          const monitor = useMonitorStore.getState();
+          if (_evaluationMetrics.systemPrompt) {
+            monitor.addLLMSpan({
+              traceId: monitor.currentTraceId ?? '',
+              stage: 'stage3',
+              model: _evaluationMetrics.model ?? 'gemini-3-flash-preview',
+              startedAt: _evaluationMetrics.startedAt ?? _evaluationMetrics.timestamp,
+              endedAt: _evaluationMetrics.endedAt ?? _evaluationMetrics.timestamp,
+              durationMs: _evaluationMetrics.durationMs,
+              systemPrompt: _evaluationMetrics.systemPrompt,
+              userMessage: _evaluationMetrics.userMessage ?? '',
+              rawResponse: _evaluationMetrics.rawResponse ?? '',
+              parsedSuccessfully: true,
+              inputTokens: _evaluationMetrics.inputTokens,
+              outputTokens: _evaluationMetrics.outputTokens,
+              stopReason: _evaluationMetrics.stopReason,
+            });
+          }
+          monitor.addTimelineEvent('stage3', 'stage3.completed', _evaluationMetrics.durationMs);
+          monitor.completePipeline();
+          monitor.flushToIndexedDB();
+        }
+        setEvaluation(evaluationData);
       } catch (err) {
         setError(err instanceof Error ? err.message : '평가 요청에 실패했습니다.');
       } finally {

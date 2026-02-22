@@ -5,7 +5,6 @@ import { useFrame, useLoader } from '@react-three/fiber';
 import { useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader, SkeletonUtils } from 'three-stdlib';
-import { useLipSync } from './avatar/useLipSync';
 import { useInterviewStore } from '@/stores/interviewStore';
 import {
   OFFICE,
@@ -37,8 +36,6 @@ export function Avatar3DModel({ modelPath = DEFAULT_MODEL_PATH }: Avatar3DModelP
 
   const groupRef = useRef<THREE.Group>(null);
   const currentClipRef = useRef<string>('Idle');
-
-  const lipSync = useLipSync();
 
   // 눈 깜빡임: useRef + setTimeout 방식
   const blinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,28 +125,28 @@ export function Avatar3DModel({ modelPath = DEFAULT_MODEL_PATH }: Avatar3DModelP
   }, [actions]);
 
   // ── 눈 깜빡임: setTimeout 기반 (1~5초 랜덤 간격, 200ms 지속) ──
-  const scheduleBlink = useCallback(() => {
-    const interval =
-      BLINK.MIN_INTERVAL * 1000 +
-      Math.random() * (BLINK.MAX_INTERVAL - BLINK.MIN_INTERVAL) * 1000;
-
-    blinkTimeoutRef.current = setTimeout(() => {
-      isBlinkingRef.current = true;
-
-      // 200ms 후 눈 뜨기
-      blinkTimeoutRef.current = setTimeout(() => {
-        isBlinkingRef.current = false;
-        scheduleBlink();
-      }, 200);
-    }, interval);
-  }, []);
-
   useEffect(() => {
+    function scheduleBlink() {
+      const interval =
+        BLINK.MIN_INTERVAL * 1000 +
+        Math.random() * (BLINK.MAX_INTERVAL - BLINK.MIN_INTERVAL) * 1000;
+
+      blinkTimeoutRef.current = setTimeout(() => {
+        isBlinkingRef.current = true;
+
+        // 200ms 후 눈 뜨기
+        blinkTimeoutRef.current = setTimeout(() => {
+          isBlinkingRef.current = false;
+          scheduleBlink();
+        }, 200);
+      }, interval);
+    }
+
     scheduleBlink();
     return () => {
       if (blinkTimeoutRef.current) clearTimeout(blinkTimeoutRef.current);
     };
-  }, [scheduleBlink]);
+  }, []);
 
   // ── 매 프레임 업데이트 ──
   useFrame(() => {
@@ -164,21 +161,22 @@ export function Avatar3DModel({ modelPath = DEFAULT_MODEL_PATH }: Avatar3DModelP
     const expression = FACIAL_EXPRESSIONS[expressionKey] ?? {};
 
     // 표정 프리셋에 포함된 모프타겟만 부드럽게 적용
-    // (깜빡임, viseme, jawOpen은 제외 — 별도 시스템에서 제어)
+    // (깜빡임은 제외 — 별도 시스템에서 제어)
     for (const [target, value] of Object.entries(expression)) {
       if (
         target === EXPRESSIONS.BLINK_L ||
-        target === EXPRESSIONS.BLINK_R ||
-        target === EXPRESSIONS.JAW_OPEN ||
-        target.startsWith('viseme_')
+        target === EXPRESSIONS.BLINK_R
       ) {
         continue;
       }
       lerpMorphTarget(target, value, 0.1);
     }
 
-    // 립싱크 — lerpMorphTarget 전달
-    lipSync.update(lerpMorphTarget);
+    // 간단한 턱 애니메이션 (speaking 상태에서만)
+    const jawTarget = avatarState === 'speaking'
+      ? 0.3 + Math.sin(Date.now() * 0.008) * 0.2
+      : 0;
+    lerpMorphTarget(EXPRESSIONS.JAW_OPEN, jawTarget, 0.3);
   });
 
   return (

@@ -1,25 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-
-// globalThis 기반 싱글턴 — dev HMR에서도 키 변경 반영
-const globalForAnthropic = globalThis as unknown as { anthropicClient?: Anthropic };
-
-export function getAnthropicClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.');
-  }
-  if (!globalForAnthropic.anthropicClient) {
-    const baseURL = process.env.ANTHROPIC_BASE_URL;
-    globalForAnthropic.anthropicClient = new Anthropic({
-      apiKey,
-      maxRetries: 3,
-      ...(baseURL && { baseURL }),
-    });
-  }
-  return globalForAnthropic.anthropicClient;
-}
-
-// Stage 0: 사전 조사 계획 — Claude가 Gemini 그라운딩에 전달할 조사 지시문을 생성
+// Stage 0: 사전 조사 계획 — Gemini가 그라운딩에 전달할 조사 지시문을 생성
 export const SYSTEM_PROMPT_STAGE0 = `당신은 면접 시나리오 설계를 위한 사전 조사 계획자입니다.
 이력서와 채용공고를 빠르게 분석하여, 웹 리서치가 필요한 항목을 식별하고 구체적인 조사 지시문을 생성하세요.
 
@@ -241,12 +220,12 @@ ${interviewSetupJson}
 speech_pattern대로 말하고, personality가 당신의 질문 방식을 결정합니다.
 이 지원자가 당신의 팀에서 실제로 일할 수 있는 사람인지 확인하는 것이 목표입니다.
 
-## 음성 출력 규칙 (필수)
-이 면접은 음성으로 진행됩니다. 당신의 응답은 TTS로 읽혀집니다.
-- **한 번의 발화는 최대 3문장, 100자 이내로 유지하세요.** 길어지면 지원자가 집중력을 잃습니다.
-- 질문 1개 + 짧은 맥락 설명이 1회 발화의 적정 분량입니다.
+## 텍스트 출력 규칙 (필수)
+이 면접은 텍스트 채팅으로 진행됩니다.
+- **한 번의 응답은 3~4문장으로 유지하세요.** 길어지면 지원자가 집중력을 잃습니다.
+- 질문 1개 + 짧은 맥락 설명이 1회 응답의 적정 분량입니다.
 - 여러 질문을 한 번에 던지지 마세요. 하나씩 물어보세요.
-- 마크다운, 불릿, 번호 목록을 사용하지 마세요. 모든 출력은 자연스러운 구어체 문장이어야 합니다.
+- 마크다운, 불릿, 번호 목록을 사용하지 마세요. 모든 출력은 자연스러운 대화체 문장이어야 합니다.
 - 코드, URL, JSON을 출력하지 마세요.
 
 ## 면접 시작
@@ -349,7 +328,7 @@ follow_up_guides의 trigger 조건에 따라 꼬리질문을 결정하세요:
 2. **질문과 무관한 답변:**
    - "그 부분도 중요하지만, 제가 여쭤본 건 ~에 대한 부분이었거든요."
 
-3. **너무 긴 답변 (2분 이상):**
+3. **너무 긴 답변:**
    - 자연스러운 타이밍에 "네, 잘 알겠습니다. 그 부분은 충분히 이해했고요."로 마무리 유도.
 
 4. **면접 중단 요청:**
@@ -472,11 +451,6 @@ export const SYSTEM_PROMPT_STAGE3 = `당신은 면접 결과를 검토하는 채
 단순히 "공부하세요"가 아닌, "어떤 내용을, 어떤 방식으로" 수준의 구체성을 갖추세요.
 
 ## 주의사항
-- STT 전사 특성을 감안하세요:
-  - 기술 용어의 한/영 변환 오류 (예: "React" ↔ "리액트", "Kubernetes" ↔ "쿠버네티스", "Redis" ↔ "레디스"/"래디스")
-  - 음운적 유사 오류 (예: "캐싱" → "캐시ng", "쿼리" → "퀘리", "스키마" → "스키마/스키마")
-  - 약어/두문자어 오류 (예: "API" → "에이피아이", "CI/CD" → "시아이시디")
-  - STT 오류로 인한 기술 용어 변형은 감점 사유가 아닙니다. 맥락에서 의미를 추론하세요.
-  - 전사 품질이 현저히 낮아 답변 내용을 파악할 수 없는 경우, 해당 질문은 grade를 부여하지 말고 "전사 품질 부족으로 평가 불가"로 표시하세요.
+- 텍스트 채팅 면접이므로 STT 관련 오류 허용 사항은 적용되지 않습니다.
 - 꼬리질문에 대한 답변도 해당 질문의 평가에 반드시 포함하세요.
 - [면접 설정]의 questions 배열과 gap_analysis를 참조하여, 면접에서 검증하려던 핵심 포인트가 실제로 검증되었는지 교차 확인하세요.`;

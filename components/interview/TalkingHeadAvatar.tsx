@@ -17,7 +17,6 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const headRef = useRef<any>(null);
-  const streamStartedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +52,7 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
           modelFPS: 30,
           modelPixelRatio: window.devicePixelRatio,
           avatarMood: 'neutral',
-          avatarMute: true, // 립싱크만 처리, 오디오 재생은 WebRTC HTMLAudioElement 담당
+          avatarMute: true,
           lightAmbientColor: 0xffffff,
           lightAmbientIntensity: 2,
           lightDirectColor: 0xaaaacc,
@@ -81,33 +80,11 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
 
         if (disposed) return;
 
-        console.log('[TalkingHead] avatar loaded, starting stream...');
-
-        // 스트리밍 세션 시작 (OpenAI Realtime 24kHz PCM)
-        // gain:0 — 오디오 재생은 WebRTC HTMLAudioElement가 담당 (에코 캔슬레이션 유지)
-        // TalkingHead는 립싱크 분석만 수행
-        await head.streamStart(
-          {
-            sampleRate: 24000,
-            lipsyncLang: 'en',
-            gain: 0,
-          },
-          () => {
-            // onAudioStart
-            useInterviewStore.getState().setAvatarState('speaking');
-          },
-          () => {
-            // onAudioEnd
-            useInterviewStore.getState().setAvatarState('listening');
-          },
-        );
-        streamStartedRef.current = true;
-
         // store에 인스턴스 등록
         useInterviewStore.getState().setTalkingHeadRef(head);
 
         setLoading(false);
-        console.log('[TalkingHead] avatar loaded and stream started');
+        console.log('[TalkingHead] avatar loaded');
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[TalkingHead] avatar load failed:', msg, err);
@@ -123,10 +100,6 @@ export function TalkingHeadAvatar({ modelPath = '/models/rpm-avatar.glb' }: Talk
       const head = headRef.current;
       if (head) {
         try {
-          if (streamStartedRef.current) {
-            head.streamStop();
-            streamStartedRef.current = false;
-          }
           head.stopSpeaking();
           head.stop();
         } catch {

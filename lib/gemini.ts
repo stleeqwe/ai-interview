@@ -53,7 +53,50 @@ function makeSkippedReport(reason: string): GroundingReport {
 }
 
 /**
- * Claude Stage 0이 생성한 조사 지시문을 기반으로 Gemini 그라운딩 리서치를 수행한다.
+ * Gemini generateContent를 래핑하여 JSON 텍스트를 반환하는 범용 헬퍼.
+ * 마크다운 코드 펜스(```json)를 자동 제거하고, 토큰 사용량을 함께 반환한다.
+ */
+export async function geminiGenerateJSON(params: {
+  systemPrompt: string;
+  userMessage: string;
+  maxOutputTokens?: number;
+  temperature?: number;
+}): Promise<{
+  text: string;
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  finishReason: string;
+}> {
+  const client = getGeminiClient();
+  const response = await client.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: params.userMessage,
+    config: {
+      systemInstruction: params.systemPrompt,
+      maxOutputTokens: params.maxOutputTokens,
+      temperature: params.temperature,
+    },
+  });
+
+  let text = response.text ?? '';
+  // 마크다운 코드 펜스 자동 제거
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  }
+
+  const usage = response.usageMetadata;
+  const finishReason = response.candidates?.[0]?.finishReason ?? 'UNKNOWN';
+
+  return {
+    text,
+    promptTokenCount: usage?.promptTokenCount ?? 0,
+    candidatesTokenCount: usage?.candidatesTokenCount ?? 0,
+    finishReason,
+  };
+}
+
+/**
+ * Stage 0이 생성한 조사 지시문을 기반으로 Gemini 그라운딩 리서치를 수행한다.
  */
 export async function performDirectedResearch(
   directives: ResearchDirectiveSet,

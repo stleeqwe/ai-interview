@@ -63,7 +63,7 @@ function MetricBox({
 
 export default function GroundingMonitorPage() {
   const groundingReport = useInterviewStore((s) => s.groundingReport);
-  const claudeMetrics = useInterviewStore((s) => s.claudeMetrics);
+  const analysisMetrics = useInterviewStore((s) => s.analysisMetrics);
   const interviewSetup = useInterviewStore((s) => s.interviewSetup);
 
   if (!groundingReport) {
@@ -83,7 +83,7 @@ export default function GroundingMonitorPage() {
   }
 
   const totalDuration =
-    groundingReport.durationMs + (claudeMetrics?.durationMs ?? 0);
+    groundingReport.durationMs + (analysisMetrics?.durationMs ?? 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 px-4 py-8">
@@ -123,23 +123,23 @@ export default function GroundingMonitorPage() {
           />
         </div>
 
-        {claudeMetrics && (
+        {analysisMetrics && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <MetricBox
-              label="Claude 소요"
-              value={`${(claudeMetrics.durationMs / 1000).toFixed(1)}s`}
+              label="Gemini 소요"
+              value={`${(analysisMetrics.durationMs / 1000).toFixed(1)}s`}
             />
             <MetricBox
               label="Input Tokens"
-              value={claudeMetrics.inputTokens.toLocaleString()}
+              value={analysisMetrics.inputTokens.toLocaleString()}
             />
             <MetricBox
               label="Output Tokens"
-              value={claudeMetrics.outputTokens.toLocaleString()}
+              value={analysisMetrics.outputTokens.toLocaleString()}
             />
             <MetricBox
               label="Stop Reason"
-              value={claudeMetrics.stopReason}
+              value={analysisMetrics.finishReason}
             />
           </div>
         )}
@@ -184,7 +184,7 @@ export default function GroundingMonitorPage() {
           <TabsContent value="pipeline" className="space-y-4">
             <PipelineView
               groundingReport={groundingReport}
-              claudeMetrics={claudeMetrics}
+              analysisMetrics={analysisMetrics}
               interviewSetup={interviewSetup}
             />
           </TabsContent>
@@ -325,11 +325,11 @@ export default function GroundingMonitorPage() {
 
 interface PipelineViewProps {
   groundingReport: NonNullable<ReturnType<typeof useInterviewStore.getState>['groundingReport']>;
-  claudeMetrics: ReturnType<typeof useInterviewStore.getState>['claudeMetrics'];
+  analysisMetrics: ReturnType<typeof useInterviewStore.getState>['analysisMetrics'];
   interviewSetup: ReturnType<typeof useInterviewStore.getState>['interviewSetup'];
 }
 
-function PipelineView({ groundingReport, claudeMetrics, interviewSetup }: PipelineViewProps) {
+function PipelineView({ groundingReport, analysisMetrics, interviewSetup }: PipelineViewProps) {
   return (
     <div className="space-y-4">
       {/* Step 1: Grounding Research */}
@@ -432,34 +432,34 @@ function PipelineView({ groundingReport, claudeMetrics, interviewSetup }: Pipeli
               2
             </span>
             <Brain className="h-4 w-4" />
-            Claude Sonnet — 시나리오 생성
-            {claudeMetrics && (
+            Gemini Flash — 시나리오 생성
+            {analysisMetrics && (
               <span className="ml-auto text-sm font-normal text-muted-foreground">
                 <Clock className="mr-1 inline h-3 w-3" />
-                {(claudeMetrics.durationMs / 1000).toFixed(1)}s
+                {(analysisMetrics.durationMs / 1000).toFixed(1)}s
               </span>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {claudeMetrics && (
+          {analysisMetrics && (
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded border p-2 text-center">
                 <p className="text-xs text-muted-foreground">Input</p>
                 <p className="text-sm font-semibold">
-                  {claudeMetrics.inputTokens.toLocaleString()}
+                  {analysisMetrics.inputTokens.toLocaleString()}
                 </p>
               </div>
               <div className="rounded border p-2 text-center">
                 <p className="text-xs text-muted-foreground">Output</p>
                 <p className="text-sm font-semibold">
-                  {claudeMetrics.outputTokens.toLocaleString()}
+                  {analysisMetrics.outputTokens.toLocaleString()}
                 </p>
               </div>
               <div className="rounded border p-2 text-center">
                 <p className="text-xs text-muted-foreground">Stop</p>
                 <p className="text-sm font-semibold">
-                  {claudeMetrics.stopReason}
+                  {analysisMetrics.finishReason}
                 </p>
               </div>
             </div>

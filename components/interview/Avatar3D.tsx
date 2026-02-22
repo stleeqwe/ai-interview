@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useInterviewStore } from '@/stores/interviewStore';
 import { Loader2, User } from 'lucide-react';
-import { Component, type ReactNode, type ErrorInfo, useState } from 'react';
+import { Component, type ReactNode, useState } from 'react';
 
 const TalkingHeadAvatar = dynamic(
   () => import('./TalkingHeadAvatar').then((mod) => ({ default: mod.TalkingHeadAvatar })),
@@ -93,7 +93,7 @@ class ErrorBoundaryWrapper extends Component<
     return { hasError: true };
   }
 
-  componentDidCatch(_error: Error, _info: ErrorInfo) {
+  componentDidCatch() {
     this.props.onError();
   }
 

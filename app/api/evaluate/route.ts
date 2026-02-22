@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAnthropicClient, SYSTEM_PROMPT_STAGE3 } from '@/lib/claude';
+import { SYSTEM_PROMPT_STAGE3 } from '@/lib/prompts';
+import { geminiGenerateJSON } from '@/lib/gemini';
 import { EvaluationSchema } from '@/lib/schemas/evaluation';
 
 const JSON_STRUCTURE_GUIDE = `
@@ -66,17 +67,6 @@ const JSON_STRUCTURE_GUIDE = `
   "next_preparation_guide": "string"
 }`;
 
-/** Claude 응답에서 JSON 텍스트를 추출하는 헬퍼 */
-function extractJsonText(response: { content: Array<{ type: string; text?: string }> }): string | null {
-  const textBlock = response.content.find((b) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text' || !('text' in textBlock)) return null;
-  let jsonText = (textBlock as { type: 'text'; text: string }).text.trim();
-  if (jsonText.startsWith('```')) {
-    jsonText = jsonText.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  }
-  return jsonText;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const { interviewSetup, transcript, resumeText } = await req.json();
@@ -96,31 +86,60 @@ export async function POST(req: NextRequest) {
 
     systemParts.push(`[면접 설정]\n${JSON.stringify(interviewSetup, null, 2)}`);
 
-    const anthropic = getAnthropicClient();
+    const evalStart = Date.now();
+    const evalStartISO = new Date(evalStart).toISOString();
+    const evalSystemPrompt = systemParts.join('\n\n');
+    const evalUserMessage = `다음 면접 대화 기록을 분석하여 평가 리포트를 JSON으로 생성해주세요.\n\n반드시 유효한 JSON만 출력하세요. 마크다운 코드블록(\`\`\`json)으로 감싸지 마세요.\n\n[면접 대화 기록]\n${transcript}`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16384,
-      system: systemParts.join('\n\n'),
-      messages: [
-        {
-          role: 'user',
-          content: `다음 면접 대화 기록을 분석하여 평가 리포트를 JSON으로 생성해주세요.\n\n반드시 유효한 JSON만 출력하세요. 마크다운 코드블록(\`\`\`json)으로 감싸지 마세요.\n\n[면접 대화 기록]\n${transcript}`,
-        },
-      ],
+    const response = await geminiGenerateJSON({
+      systemPrompt: evalSystemPrompt,
+      userMessage: evalUserMessage,
+      maxOutputTokens: 16384,
     });
 
-    const jsonText = extractJsonText(response);
-    if (!jsonText) {
+    if (!response.text) {
       return NextResponse.json(
         { error: '평가 리포트 생성 결과가 비어있습니다. 다시 시도해주세요.' },
         { status: 422 }
       );
     }
 
-    const parsed = EvaluationSchema.parse(JSON.parse(jsonText));
+    let parsed;
+    try {
+      parsed = EvaluationSchema.parse(JSON.parse(response.text));
+    } catch (parseErr) {
+      return NextResponse.json(
+        {
+          error: '평가 JSON 파싱에 실패했습니다.',
+          _evaluationMetrics: { rawResponse: response.text, parseError: String(parseErr) },
+        },
+        { status: 422 }
+      );
+    }
+    const evalEnd = Date.now();
+    const evalDurationMs = evalEnd - evalStart;
 
-    return NextResponse.json(parsed);
+    console.log(
+      `[Stage 3] 완료 (${evalDurationMs}ms) input=${response.promptTokenCount} output=${response.candidatesTokenCount}`
+    );
+
+    return NextResponse.json({
+      ...parsed,
+      _evaluationMetrics: {
+        durationMs: evalDurationMs,
+        inputTokens: response.promptTokenCount,
+        outputTokens: response.candidatesTokenCount,
+        finishReason: response.finishReason,
+        model: 'gemini-3-flash-preview',
+        timestamp: new Date().toISOString(),
+        // 모니터링 확장 필드
+        systemPrompt: evalSystemPrompt,
+        userMessage: evalUserMessage,
+        rawResponse: response.text,
+        startedAt: evalStartISO,
+        endedAt: new Date(evalEnd).toISOString(),
+      },
+    });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     const errStack = error instanceof Error ? error.stack : undefined;
