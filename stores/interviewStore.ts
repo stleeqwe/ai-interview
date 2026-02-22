@@ -4,6 +4,7 @@ import { immer } from 'zustand/middleware/immer';
 import type { InterviewSetupJSON } from '@/lib/schemas/interviewSetup';
 import type { EvaluationJSON } from '@/lib/schemas/evaluation';
 import type { GroundingReport } from '@/lib/types/grounding';
+import { STORAGE_KEYS } from '@/lib/constants';
 
 export interface AnalysisMetrics {
   durationMs: number;
@@ -86,14 +87,6 @@ interface InterviewState {
   reset: () => void;
 }
 
-const SESSION_STORAGE_KEY = 'ai-interview-setup';
-const TRANSCRIPT_STORAGE_KEY = 'ai-interview-transcript';
-const EVALUATION_STORAGE_KEY = 'ai-interview-evaluation';
-const RESUME_TEXT_STORAGE_KEY = 'ai-interview-resume-text';
-const GROUNDING_REPORT_KEY = 'ai-interview-grounding-report';
-const ANALYSIS_METRICS_KEY = 'ai-interview-analysis-metrics';
-const CHAT_METRICS_KEY = 'ai-interview-chat-metrics';
-const EVALUATION_METRICS_KEY = 'ai-interview-evaluation-metrics';
 
 function loadFromStorage<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
@@ -117,11 +110,11 @@ function saveToStorage(key: string, value: unknown) {
 }
 
 function loadInterviewSetup(): InterviewSetupJSON | null {
-  return loadFromStorage<InterviewSetupJSON>(SESSION_STORAGE_KEY);
+  return loadFromStorage<InterviewSetupJSON>(STORAGE_KEYS.SESSION);
 }
 
 function saveInterviewSetup(setup: InterviewSetupJSON | null) {
-  saveToStorage(SESSION_STORAGE_KEY, setup);
+  saveToStorage(STORAGE_KEYS.SESSION, setup);
 }
 
 const initialState = {
@@ -148,7 +141,7 @@ export const useInterviewStore = create<InterviewState>()(
     ...initialState,
 
     setResumeText: (text, fileName) => {
-      saveToStorage(RESUME_TEXT_STORAGE_KEY, text);
+      saveToStorage(STORAGE_KEYS.RESUME_TEXT, text);
       set((s) => {
         s.resumeText = text;
         s.resumeFileName = fileName;
@@ -170,28 +163,28 @@ export const useInterviewStore = create<InterviewState>()(
     },
 
     setGroundingReport: (report) => {
-      saveToStorage(GROUNDING_REPORT_KEY, report);
+      saveToStorage(STORAGE_KEYS.GROUNDING_REPORT, report);
       set((s) => {
         s.groundingReport = report;
       });
     },
 
     setAnalysisMetrics: (metrics) => {
-      saveToStorage(ANALYSIS_METRICS_KEY, metrics);
+      saveToStorage(STORAGE_KEYS.ANALYSIS_METRICS, metrics);
       set((s) => {
         s.analysisMetrics = metrics;
       });
     },
 
     setChatMetrics: (metrics) => {
-      saveToStorage(CHAT_METRICS_KEY, metrics);
+      saveToStorage(STORAGE_KEYS.CHAT_METRICS, metrics);
       set((s) => {
         s.chatMetrics = metrics;
       });
     },
 
     setEvaluationMetrics: (metrics) => {
-      saveToStorage(EVALUATION_METRICS_KEY, metrics);
+      saveToStorage(STORAGE_KEYS.EVALUATION_METRICS, metrics);
       set((s) => {
         s.evaluationMetrics = metrics;
       });
@@ -200,7 +193,7 @@ export const useInterviewStore = create<InterviewState>()(
     addTranscript: (entry) =>
       set((s) => {
         s.transcript.push(entry);
-        saveToStorage(TRANSCRIPT_STORAGE_KEY, s.transcript);
+        saveToStorage(STORAGE_KEYS.TRANSCRIPT, s.transcript);
       }),
 
     setAvatarState: (state) =>
@@ -225,7 +218,7 @@ export const useInterviewStore = create<InterviewState>()(
       }),
 
     setEvaluation: (evaluation) => {
-      saveToStorage(EVALUATION_STORAGE_KEY, evaluation);
+      saveToStorage(STORAGE_KEYS.EVALUATION, evaluation);
       set((s) => {
         s.evaluation = evaluation;
       });
@@ -233,13 +226,13 @@ export const useInterviewStore = create<InterviewState>()(
 
     hydrateFromSession: () => {
       const savedSetup = loadInterviewSetup();
-      const savedTranscript = loadFromStorage<TranscriptEntry[]>(TRANSCRIPT_STORAGE_KEY);
-      const savedEvaluation = loadFromStorage<EvaluationJSON>(EVALUATION_STORAGE_KEY);
-      const savedResumeText = loadFromStorage<string>(RESUME_TEXT_STORAGE_KEY);
-      const savedGrounding = loadFromStorage<GroundingReport>(GROUNDING_REPORT_KEY);
-      const savedAnalysisMetrics = loadFromStorage<AnalysisMetrics>(ANALYSIS_METRICS_KEY);
-      const savedChatMetrics = loadFromStorage<ChatMetrics>(CHAT_METRICS_KEY);
-      const savedEvaluationMetrics = loadFromStorage<EvaluationMetrics>(EVALUATION_METRICS_KEY);
+      const savedTranscript = loadFromStorage<TranscriptEntry[]>(STORAGE_KEYS.TRANSCRIPT);
+      const savedEvaluation = loadFromStorage<EvaluationJSON>(STORAGE_KEYS.EVALUATION);
+      const savedResumeText = loadFromStorage<string>(STORAGE_KEYS.RESUME_TEXT);
+      const savedGrounding = loadFromStorage<GroundingReport>(STORAGE_KEYS.GROUNDING_REPORT);
+      const savedAnalysisMetrics = loadFromStorage<AnalysisMetrics>(STORAGE_KEYS.ANALYSIS_METRICS);
+      const savedChatMetrics = loadFromStorage<ChatMetrics>(STORAGE_KEYS.CHAT_METRICS);
+      const savedEvaluationMetrics = loadFromStorage<EvaluationMetrics>(STORAGE_KEYS.EVALUATION_METRICS);
       set((s) => {
         if (savedSetup) s.interviewSetup = savedSetup;
         if (savedTranscript?.length) s.transcript = savedTranscript;
@@ -254,10 +247,10 @@ export const useInterviewStore = create<InterviewState>()(
 
     resetForNewInterview: () => {
       // 면접 진행/평가 데이터만 초기화 (시나리오 설정은 유지)
-      saveToStorage(TRANSCRIPT_STORAGE_KEY, null);
-      saveToStorage(EVALUATION_STORAGE_KEY, null);
-      saveToStorage(CHAT_METRICS_KEY, null);
-      saveToStorage(EVALUATION_METRICS_KEY, null);
+      saveToStorage(STORAGE_KEYS.TRANSCRIPT, null);
+      saveToStorage(STORAGE_KEYS.EVALUATION, null);
+      saveToStorage(STORAGE_KEYS.CHAT_METRICS, null);
+      saveToStorage(STORAGE_KEYS.EVALUATION_METRICS, null);
       set((s) => {
         s.transcript = [];
         s.evaluation = null;
@@ -271,13 +264,13 @@ export const useInterviewStore = create<InterviewState>()(
 
     reset: () => {
       saveInterviewSetup(null);
-      saveToStorage(TRANSCRIPT_STORAGE_KEY, null);
-      saveToStorage(EVALUATION_STORAGE_KEY, null);
-      saveToStorage(RESUME_TEXT_STORAGE_KEY, null);
-      saveToStorage(GROUNDING_REPORT_KEY, null);
-      saveToStorage(ANALYSIS_METRICS_KEY, null);
-      saveToStorage(CHAT_METRICS_KEY, null);
-      saveToStorage(EVALUATION_METRICS_KEY, null);
+      saveToStorage(STORAGE_KEYS.TRANSCRIPT, null);
+      saveToStorage(STORAGE_KEYS.EVALUATION, null);
+      saveToStorage(STORAGE_KEYS.RESUME_TEXT, null);
+      saveToStorage(STORAGE_KEYS.GROUNDING_REPORT, null);
+      saveToStorage(STORAGE_KEYS.ANALYSIS_METRICS, null);
+      saveToStorage(STORAGE_KEYS.CHAT_METRICS, null);
+      saveToStorage(STORAGE_KEYS.EVALUATION_METRICS, null);
       set(() => ({
         ...initialState,
       }));

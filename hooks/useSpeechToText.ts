@@ -21,6 +21,12 @@ function getSpeechRecognitionClass(): (new () => SpeechRecognitionInstance) | nu
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
+function safeStopRecognition(ref: React.RefObject<SpeechRecognitionInstance | null>) {
+  if (ref.current) {
+    try { ref.current.stop(); } catch { /* ignore */ }
+  }
+}
+
 export function useSpeechToText(): UseSpeechToTextReturn {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -38,9 +44,7 @@ export function useSpeechToText(): UseSpeechToTextReturn {
     if (!SpeechRecognition) return;
 
     // 기존 인스턴스 정리
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* ignore */ }
-    }
+    safeStopRecognition(recognitionRef);
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'ko-KR';
@@ -79,10 +83,8 @@ export function useSpeechToText(): UseSpeechToTextReturn {
   }, []);
 
   const stopListening = useCallback(() => {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* ignore */ }
-      recognitionRef.current = null;
-    }
+    safeStopRecognition(recognitionRef);
+    recognitionRef.current = null;
     setIsListening(false);
   }, []);
 
@@ -93,9 +95,7 @@ export function useSpeechToText(): UseSpeechToTextReturn {
   // 언마운트 시 정리
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ignore */ }
-      }
+      safeStopRecognition(recognitionRef);
     };
   }, []);
 

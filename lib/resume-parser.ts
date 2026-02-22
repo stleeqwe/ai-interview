@@ -1,6 +1,5 @@
 import { fileTypeFromBuffer } from 'file-type';
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+import { MAX_RESUME_FILE_SIZE } from '@/lib/constants';
 
 const ALLOWED_MIMES = new Set([
   'application/pdf',
@@ -22,7 +21,7 @@ function getExtension(fileName: string): string {
 
 // 파일 검증
 export function validateResumeFile(file: File): string | null {
-  if (file.size > MAX_FILE_SIZE) {
+  if (file.size > MAX_RESUME_FILE_SIZE) {
     return '파일 크기는 5MB 이하여야 합니다.';
   }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildInterviewerPrompt } from '@/lib/prompts';
 import { getGeminiClient } from '@/lib/gemini';
 import type { InterviewSetupJSON } from '@/lib/schemas/interviewSetup';
+import { GEMINI_MODEL, INTERVIEW_END_TOKEN } from '@/lib/constants';
 
 /**
  * 면접 진행에 필요한 필드만 추출하여 토큰 사용량을 줄인다.
@@ -27,6 +28,10 @@ function filterForInterview(setup: InterviewSetupJSON) {
       concern_signal: q.concern_signal,
     })),
   };
+}
+
+function stripEndToken(text: string): string {
+  return text.replaceAll(INTERVIEW_END_TOKEN, '').trim();
 }
 
 interface ChatMessage {
@@ -66,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     // 사용자 입력에서 시스템 토큰 제거 (인젝션 방지)
     if (userMessage) {
-      const sanitized = userMessage.replace(/\[INTERVIEW_END\]/g, '');
+      const sanitized = stripEndToken(userMessage);
       contents.push({
         role: 'user',
         parts: [{ text: sanitized }],
@@ -83,7 +88,7 @@ export async function POST(req: NextRequest) {
 
     const client = getGeminiClient();
     const response = await client.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: GEMINI_MODEL,
       contents,
       config: {
         systemInstruction: systemPrompt,
@@ -96,10 +101,10 @@ export async function POST(req: NextRequest) {
     let reply = response.text ?? '';
 
     // [INTERVIEW_END] 감지
-    const isInterviewEnd = reply.includes('[INTERVIEW_END]');
+    const isInterviewEnd = reply.includes(INTERVIEW_END_TOKEN);
 
     // 표시용 텍스트에서 토큰 제거
-    reply = reply.replace(/\[INTERVIEW_END\]/g, '').trim();
+    reply = stripEndToken(reply);
 
     const usage = response.usageMetadata;
 
@@ -110,7 +115,7 @@ export async function POST(req: NextRequest) {
         durationMs,
         promptTokenCount: usage?.promptTokenCount ?? 0,
         candidatesTokenCount: usage?.candidatesTokenCount ?? 0,
-        model: 'gemini-3-flash-preview',
+        model: GEMINI_MODEL,
         timestamp: new Date().toISOString(),
       },
     });

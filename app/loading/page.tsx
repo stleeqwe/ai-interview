@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useInterviewStore } from '@/stores/interviewStore';
+import { LOADING_STEP_INTERVAL_MS, LOADING_PROGRESS_INTERVAL_MS } from '@/lib/constants';
 
 const STEPS = [
   '관련 정보 검색 중...',
@@ -46,7 +47,7 @@ export default function LoadingPage() {
         }
         return prev + 1;
       });
-    }, 800);
+    }, LOADING_STEP_INTERVAL_MS);
 
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
@@ -56,7 +57,7 @@ export default function LoadingPage() {
         }
         return prev + 2;
       });
-    }, 60);
+    }, LOADING_PROGRESS_INTERVAL_MS);
 
     return () => {
       clearInterval(stepInterval);

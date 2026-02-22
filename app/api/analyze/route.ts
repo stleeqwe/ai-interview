@@ -7,8 +7,7 @@ import {
 import { geminiGenerateJSON, performDirectedResearch } from '@/lib/gemini';
 import { InterviewSetupSchema } from '@/lib/schemas/interviewSetup';
 import type { ResearchDirectiveSet } from '@/lib/types/grounding';
-
-const MIN_TEXT_LENGTH = 50;
+import { GEMINI_MODEL, MIN_TEXT_LENGTH } from '@/lib/constants';
 
 const STAGE1_JSON_GUIDE = `
 ## 출력 JSON 구조 (반드시 이 구조를 정확히 따르세요)
@@ -224,7 +223,7 @@ export async function POST(req: NextRequest) {
           stage1Tokens: { input: stage1Response.promptTokenCount, output: stage1Response.candidatesTokenCount },
           finishReason: stage1Response.finishReason,
           directiveCount: directives?.directives.length ?? 0,
-          model: 'gemini-3-flash-preview',
+          model: GEMINI_MODEL,
           // 모니터링 확장 필드
           stage0SystemPrompt: stage0SystemPrompt,
           stage0UserMessage: stage0UserMessage,

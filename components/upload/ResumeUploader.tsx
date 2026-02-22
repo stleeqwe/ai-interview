@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useInterviewStore } from '@/stores/interviewStore';
+import { MAX_RESUME_FILE_SIZE } from '@/lib/constants';
 
 const ACCEPTED_TYPES: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
@@ -57,7 +58,7 @@ export function ResumeUploader() {
     onDrop,
     accept: ACCEPTED_TYPES,
     maxFiles: 1,
-    maxSize: 5 * 1024 * 1024, // 5MB
+    maxSize: MAX_RESUME_FILE_SIZE,
     disabled: isUploading,
     onDropRejected: (rejections) => {
       const code = rejections[0]?.errors[0]?.code;

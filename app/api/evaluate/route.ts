@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SYSTEM_PROMPT_STAGE3 } from '@/lib/prompts';
 import { geminiGenerateJSON } from '@/lib/gemini';
 import { EvaluationSchema } from '@/lib/schemas/evaluation';
+import { GEMINI_MODEL } from '@/lib/constants';
 
 const JSON_STRUCTURE_GUIDE = `
 ## 출력 JSON 구조
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
         inputTokens: response.promptTokenCount,
         outputTokens: response.candidatesTokenCount,
         finishReason: response.finishReason,
-        model: 'gemini-3-flash-preview',
+        model: GEMINI_MODEL,
         timestamp: new Date().toISOString(),
         // 모니터링 확장 필드
         systemPrompt: evalSystemPrompt,

@@ -2,9 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useInterviewStore } from '@/stores/interviewStore';
-
-const MAX_INTERVIEW_SECONDS = 10 * 60; // 10분
-const WARNING_SECONDS = 8 * 60; // 8분
+import { INTERVIEW_MAX_SECONDS, INTERVIEW_WARNING_SECONDS } from '@/lib/constants';
 
 interface UseElapsedTimerReturn {
   elapsedSeconds: number;
@@ -20,7 +18,7 @@ export function useElapsedTimer(): UseElapsedTimerReturn {
   const incrementTimer = useInterviewStore((s) => s.incrementTimer);
 
   useEffect(() => {
-    if (isInterviewActive && elapsedSeconds < MAX_INTERVIEW_SECONDS) {
+    if (isInterviewActive && elapsedSeconds < INTERVIEW_MAX_SECONDS) {
       intervalRef.current = setInterval(() => {
         incrementTimer();
       }, 1000);
@@ -32,7 +30,7 @@ export function useElapsedTimer(): UseElapsedTimerReturn {
         intervalRef.current = null;
       }
     };
-  }, [isInterviewActive, elapsedSeconds >= MAX_INTERVIEW_SECONDS, incrementTimer]);
+  }, [isInterviewActive, elapsedSeconds >= INTERVIEW_MAX_SECONDS, incrementTimer]);
 
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
@@ -40,8 +38,8 @@ export function useElapsedTimer(): UseElapsedTimerReturn {
 
   return {
     elapsedSeconds,
-    isWarning: elapsedSeconds >= WARNING_SECONDS && elapsedSeconds < MAX_INTERVIEW_SECONDS,
-    isTimeUp: elapsedSeconds >= MAX_INTERVIEW_SECONDS,
+    isWarning: elapsedSeconds >= INTERVIEW_WARNING_SECONDS && elapsedSeconds < INTERVIEW_MAX_SECONDS,
+    isTimeUp: elapsedSeconds >= INTERVIEW_MAX_SECONDS,
     formattedTime,
   };
 }

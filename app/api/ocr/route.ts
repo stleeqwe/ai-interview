@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGeminiClient } from '@/lib/gemini';
+import { GEMINI_MODEL } from '@/lib/constants';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     const gemini = getGeminiClient();
 
     const response = await gemini.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: GEMINI_MODEL,
       contents: [
         {
           role: 'user',

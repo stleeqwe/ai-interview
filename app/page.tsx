@@ -10,6 +10,60 @@ import { ResumeUploader } from '@/components/upload/ResumeUploader';
 import { JobPostingInput } from '@/components/upload/JobPostingInput';
 import { useInterviewStore } from '@/stores/interviewStore';
 import { useMonitorStore } from '@/stores/monitorStore';
+import { GEMINI_MODEL } from '@/lib/constants';
+import { recordLLMSpan } from '@/lib/monitoring/llm-span';
+import type { AnalysisMetrics } from '@/stores/interviewStore';
+import type { GroundingReport } from '@/lib/types/grounding';
+
+function processAnalysisMetrics(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _analysisMetrics: Record<string, any>,
+  _groundingReport: GroundingReport | null,
+  setAnalysisMetrics: (m: AnalysisMetrics) => void,
+): void {
+  setAnalysisMetrics({
+    durationMs: _analysisMetrics.totalDurationMs ?? 0,
+    inputTokens: (_analysisMetrics.stage0Tokens?.input ?? 0) + (_analysisMetrics.stage1Tokens?.input ?? 0),
+    outputTokens: (_analysisMetrics.stage0Tokens?.output ?? 0) + (_analysisMetrics.stage1Tokens?.output ?? 0),
+    finishReason: _analysisMetrics.finishReason ?? 'STOP',
+  });
+
+  if (_analysisMetrics.stage0StartedAt) {
+    recordLLMSpan({
+      stage: 'stage0',
+      model: GEMINI_MODEL,
+      startedAt: _analysisMetrics.stage0StartedAt,
+      endedAt: _analysisMetrics.stage0EndedAt,
+      durationMs: _analysisMetrics.stage0DurationMs,
+      systemPrompt: _analysisMetrics.stage0SystemPrompt ?? '',
+      userMessage: _analysisMetrics.stage0UserMessage ?? '',
+      rawResponse: _analysisMetrics.stage0RawResponse ?? '',
+      inputTokens: _analysisMetrics.stage0Tokens?.input ?? 0,
+      outputTokens: _analysisMetrics.stage0Tokens?.output ?? 0,
+      stopReason: 'STOP',
+    });
+  }
+
+  if (_groundingReport?.durationMs) {
+    useMonitorStore.getState().addTimelineEvent('grounding', 'grounding.completed', _groundingReport.durationMs);
+  }
+
+  if (_analysisMetrics.stage1StartedAt) {
+    recordLLMSpan({
+      stage: 'stage1',
+      model: GEMINI_MODEL,
+      startedAt: _analysisMetrics.stage1StartedAt,
+      endedAt: _analysisMetrics.stage1EndedAt,
+      durationMs: _analysisMetrics.stage1DurationMs,
+      systemPrompt: _analysisMetrics.stage1SystemPrompt ?? '',
+      userMessage: _analysisMetrics.stage1UserMessage ?? '',
+      rawResponse: _analysisMetrics.stage1RawResponse ?? '',
+      inputTokens: _analysisMetrics.stage1Tokens?.input ?? 0,
+      outputTokens: _analysisMetrics.stage1Tokens?.output ?? 0,
+      stopReason: _analysisMetrics.finishReason ?? 'STOP',
+    });
+  }
+}
 
 export default function Home() {
   const router = useRouter();
@@ -63,58 +117,7 @@ export default function Home() {
       const { _groundingReport, _analysisMetrics, ...interviewSetup } = data;
       if (_groundingReport) setGroundingReport(_groundingReport);
       if (_analysisMetrics) {
-        // API 응답 스키마 → 스토어 AnalysisMetrics 인터페이스로 변환
-        setAnalysisMetrics({
-          durationMs: _analysisMetrics.totalDurationMs ?? 0,
-          inputTokens: (_analysisMetrics.stage0Tokens?.input ?? 0) + (_analysisMetrics.stage1Tokens?.input ?? 0),
-          outputTokens: (_analysisMetrics.stage0Tokens?.output ?? 0) + (_analysisMetrics.stage1Tokens?.output ?? 0),
-          finishReason: _analysisMetrics.finishReason ?? 'STOP',
-        });
-
-        // LLM Span: Stage 0
-        if (_analysisMetrics.stage0StartedAt) {
-          monitor.addLLMSpan({
-            traceId: monitor.currentTraceId ?? '',
-            stage: 'stage0',
-            model: 'gemini-3-flash-preview',
-            startedAt: _analysisMetrics.stage0StartedAt,
-            endedAt: _analysisMetrics.stage0EndedAt,
-            durationMs: _analysisMetrics.stage0DurationMs,
-            systemPrompt: _analysisMetrics.stage0SystemPrompt ?? '',
-            userMessage: _analysisMetrics.stage0UserMessage ?? '',
-            rawResponse: _analysisMetrics.stage0RawResponse ?? '',
-            parsedSuccessfully: true,
-            inputTokens: _analysisMetrics.stage0Tokens?.input ?? 0,
-            outputTokens: _analysisMetrics.stage0Tokens?.output ?? 0,
-            stopReason: 'STOP',
-          });
-          monitor.addTimelineEvent('stage0', 'stage0.completed', _analysisMetrics.stage0DurationMs);
-        }
-
-        // Timeline: Grounding
-        if (_groundingReport?.durationMs) {
-          monitor.addTimelineEvent('grounding', 'grounding.completed', _groundingReport.durationMs);
-        }
-
-        // LLM Span: Stage 1
-        if (_analysisMetrics.stage1StartedAt) {
-          monitor.addLLMSpan({
-            traceId: monitor.currentTraceId ?? '',
-            stage: 'stage1',
-            model: 'gemini-3-flash-preview',
-            startedAt: _analysisMetrics.stage1StartedAt,
-            endedAt: _analysisMetrics.stage1EndedAt,
-            durationMs: _analysisMetrics.stage1DurationMs,
-            systemPrompt: _analysisMetrics.stage1SystemPrompt ?? '',
-            userMessage: _analysisMetrics.stage1UserMessage ?? '',
-            rawResponse: _analysisMetrics.stage1RawResponse ?? '',
-            parsedSuccessfully: true,
-            inputTokens: _analysisMetrics.stage1Tokens?.input ?? 0,
-            outputTokens: _analysisMetrics.stage1Tokens?.output ?? 0,
-            stopReason: _analysisMetrics.finishReason ?? 'STOP',
-          });
-          monitor.addTimelineEvent('stage1', 'stage1.completed', _analysisMetrics.stage1DurationMs);
-        }
+        processAnalysisMetrics(_analysisMetrics, _groundingReport, setAnalysisMetrics);
       }
 
       setInterviewSetup(interviewSetup);

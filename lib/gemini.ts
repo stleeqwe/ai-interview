@@ -5,6 +5,7 @@ import type {
   GroundingEvidence,
   ResearchDirectiveSet,
 } from '@/lib/types/grounding';
+import { GEMINI_MODEL } from '@/lib/constants';
 
 const globalForGemini = globalThis as unknown as { geminiClient?: GoogleGenAI };
 
@@ -69,7 +70,7 @@ export async function geminiGenerateJSON(params: {
 }> {
   const client = getGeminiClient();
   const response = await client.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_MODEL,
     contents: params.userMessage,
     config: {
       systemInstruction: params.systemPrompt,
@@ -140,7 +141,7 @@ ${directives.identified_gaps.map((g) => `- ${g}`).join('\n')}`;
 
     try {
       const response = await client.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: GEMINI_MODEL,
         contents: userContent,
         config: {
           systemInstruction: DIRECTED_GROUNDING_PROMPT,

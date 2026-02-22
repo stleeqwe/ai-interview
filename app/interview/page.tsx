@@ -12,7 +12,7 @@ import { useInterviewStore } from '@/stores/interviewStore';
 import { useMonitorStore } from '@/stores/monitorStore';
 import { useChatSession } from '@/hooks/useChatSession';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
-import { useInterviewStore as useTimerStore } from '@/stores/interviewStore';
+import { INTERVIEW_MAX_SECONDS, INTERVIEW_WARNING_SECONDS } from '@/lib/constants';
 
 export default function InterviewPage() {
   const router = useRouter();
@@ -23,9 +23,9 @@ export default function InterviewPage() {
   const { status, isAiThinking, startInterview, sendMessage, endInterview } = useChatSession();
   const { isListening, transcript: sttTranscript, isSupported: sttSupported, startListening, stopListening, resetTranscript } = useSpeechToText();
 
-  const elapsedSeconds = useTimerStore((s) => s.elapsedSeconds);
-  const isWarning = elapsedSeconds >= 8 * 60 && elapsedSeconds < 10 * 60;
-  const isTimeUp = elapsedSeconds >= 10 * 60;
+  const elapsedSeconds = useInterviewStore((s) => s.elapsedSeconds);
+  const isWarning = elapsedSeconds >= INTERVIEW_WARNING_SECONDS && elapsedSeconds < INTERVIEW_MAX_SECONDS;
+  const isTimeUp = elapsedSeconds >= INTERVIEW_MAX_SECONDS;
 
   const [inputText, setInputText] = useState('');
   const [initError, setInitError] = useState<string | null>(null);

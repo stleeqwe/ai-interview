@@ -3,6 +3,7 @@
 import { useRef, useCallback, useState } from 'react';
 import { useInterviewStore } from '@/stores/interviewStore';
 import { useMonitorStore } from '@/stores/monitorStore';
+import { AVATAR_SPEAKING_DURATION_MS, INTERVIEW_END_DELAY_MS } from '@/lib/constants';
 
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'sending' | 'disconnected' | 'error';
 
@@ -17,6 +18,13 @@ interface UseChatSessionReturn {
   startInterview: () => Promise<void>;
   sendMessage: (text: string, options?: { isSystemMessage?: boolean }) => Promise<void>;
   endInterview: () => void;
+}
+
+function transitionAvatarToListening() {
+  useInterviewStore.getState().setAvatarState('speaking');
+  setTimeout(() => {
+    useInterviewStore.getState().setAvatarState('listening');
+  }, AVATAR_SPEAKING_DURATION_MS);
 }
 
 export function useChatSession(): UseChatSessionReturn {
@@ -90,10 +98,7 @@ export function useChatSession(): UseChatSessionReturn {
         timestamp: Date.now(),
       });
       store.setInterviewActive(true);
-      store.setAvatarState('speaking');
-      setTimeout(() => {
-        useInterviewStore.getState().setAvatarState('listening');
-      }, 2000);
+      transitionAvatarToListening();
 
       setStatus('connected');
       setIsAiThinking(false);
@@ -147,20 +152,17 @@ export function useChatSession(): UseChatSessionReturn {
         timestamp: Date.now(),
       });
 
-      store.setAvatarState('speaking');
-      setTimeout(() => {
-        useInterviewStore.getState().setAvatarState('listening');
-      }, 2000);
+      transitionAvatarToListening();
 
       setIsAiThinking(false);
       setStatus('connected');
 
-      // [INTERVIEW_END] 감지 시 2초 후 종료
+      // [INTERVIEW_END] 감지 시 종료
       if (data.isInterviewEnd) {
         endingRef.current = true;
         setTimeout(() => {
           endInterview();
-        }, 2000);
+        }, INTERVIEW_END_DELAY_MS);
       }
     } catch (error) {
       console.error('메시지 전송 실패:', error);

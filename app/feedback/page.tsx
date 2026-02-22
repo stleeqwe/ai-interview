@@ -11,6 +11,8 @@ import { SkillRadar } from '@/components/feedback/SkillRadar';
 import { ActionItems } from '@/components/feedback/ActionItems';
 import { useInterviewStore, formatTranscript } from '@/stores/interviewStore';
 import { useMonitorStore } from '@/stores/monitorStore';
+import { GEMINI_MODEL } from '@/lib/constants';
+import { recordLLMSpan } from '@/lib/monitoring/llm-span';
 
 export default function FeedbackPage() {
   const router = useRouter();
@@ -63,25 +65,22 @@ export default function FeedbackPage() {
           useInterviewStore.getState().setEvaluationMetrics(_evaluationMetrics);
 
           // 모니터링: Evaluation LLM Span
-          const monitor = useMonitorStore.getState();
           if (_evaluationMetrics.systemPrompt) {
-            monitor.addLLMSpan({
-              traceId: monitor.currentTraceId ?? '',
+            recordLLMSpan({
               stage: 'stage3',
-              model: _evaluationMetrics.model ?? 'gemini-3-flash-preview',
+              model: _evaluationMetrics.model ?? GEMINI_MODEL,
               startedAt: _evaluationMetrics.startedAt ?? _evaluationMetrics.timestamp,
               endedAt: _evaluationMetrics.endedAt ?? _evaluationMetrics.timestamp,
               durationMs: _evaluationMetrics.durationMs,
               systemPrompt: _evaluationMetrics.systemPrompt,
               userMessage: _evaluationMetrics.userMessage ?? '',
               rawResponse: _evaluationMetrics.rawResponse ?? '',
-              parsedSuccessfully: true,
               inputTokens: _evaluationMetrics.inputTokens,
               outputTokens: _evaluationMetrics.outputTokens,
               stopReason: _evaluationMetrics.finishReason,
             });
           }
-          monitor.addTimelineEvent('stage3', 'stage3.completed', _evaluationMetrics.durationMs);
+          const monitor = useMonitorStore.getState();
           monitor.completePipeline();
           monitor.flushToIndexedDB();
         }
